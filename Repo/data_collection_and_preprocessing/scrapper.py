@@ -5,6 +5,8 @@ import pandas as pd
 from tqdm import tqdm
 from selenium import webdriver
 
+"""General Class created to scrap goods from online shops
+Should be extended."""
 class Scrapper():
     def __init__(self, start_url:str, saving_file:str):
         self.homepage = start_url
@@ -12,6 +14,36 @@ class Scrapper():
         self.driver_path = os.path.abspath(os.path.join("../materials_for_preproseccing/firefox", "geckodriver"))
         self.driver = None
 
+    """Send driver to homepage.
+        https://www.interspar.at/shop/lebensmittel/"""
+    def to_homepage(self) -> None:
+        self.driver.get(self.homepage)
+        self.random_sleep()
+
+    """Receiving a dictionary of products from an ÜBERSICHT page it writes a df, 
+        concatenates with already existing csv and updates the csv file.
+        :param: dict with following keys: 'category', 'price', 'summary', 'title'
+                           and values as lists with the same length = number of objects in overview"""
+    def write_to_file(self, products: dict) -> None:
+        new_df = pd.DataFrame(products)
+        try:
+            csv_df = pd.read_csv(self.file, sep=";", index_col=0)
+            full_df = pd.concat([new_df, csv_df])
+        except:
+            full_df = new_df
+        full_df.to_csv(self.file, sep=';')
+
+    """Function enables different idling time for
+         marionette driver to behave less suspicious"""
+    def random_sleep(self, threshold=1) -> None:
+        long = np.random.random()  # make a long or short delay
+        if long > threshold:
+            second = np.random.randint(7, 20)
+        else:
+            second = 1
+        time.sleep(second)
+
+"""Class which is specifically created for scrappint Spar. Inherits from a general class"""
 class SparScrapper(Scrapper):
     pass
 
@@ -41,13 +73,7 @@ class SparScrapper(Scrapper):
                 self.driver = webdriver.Firefox(executable_path=self.driver_path)
                 self.random_sleep(threshold=0)
         if attempt==5:
-            print("Failed to go to homepage of Spar.")
-
-    """Send driver to homepage.
-    https://www.interspar.at/shop/lebensmittel/"""
-    def to_homepage(self) -> None:
-        self.driver.get(self.homepage)
-        self.random_sleep()
+            print("Failed to go to homepage.")
 
     """ 
     Method opens an overview page of the category by defined id.
@@ -142,29 +168,6 @@ class SparScrapper(Scrapper):
                 self.random_sleep()
                 page += 1
             except: break# all pageas are exausted
-
-    """Receiving a dictionary of products from an ÜBERSICHT page it writes a df, 
-    concatenates with already existing csv and updates the csv file.
-    :param: dict with following keys: 'category', 'price', 'summary', 'title'
-                       and values as lists with the same length = number of objects in overview"""
-    def write_to_file(self, products:dict) -> None:
-        new_df = pd.DataFrame(products)
-        try:
-            csv_df = pd.read_csv(self.file, sep=";", index_col=0)
-            full_df = pd.concat([new_df, csv_df])
-        except:
-            full_df = new_df
-        full_df.to_csv(self.file, sep=';')
-
-    """Function enables different idling time for
-     marionette driver to behave less suspicious"""
-    def random_sleep(self, threshold=1) -> None:
-        long = np.random.random() #make a long or short delay
-        if long>threshold:
-            second = np.random.randint(7, 20)
-        else:
-            second = 1
-        time.sleep(second)
 
     """The whole route of retrieving data on all possible
     items from InterSpar online shop

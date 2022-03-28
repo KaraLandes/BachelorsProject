@@ -8,7 +8,7 @@ from torch.autograd import Variable
 from torch.optim import Adam, SGD
 
 class BaseNet(nn.Module):
-    def __init__(self, n_in_channels: int = 1, n_hidden_layers: int = 3, n_kernels: int = 32, kernel_size: int = 7):
+    def __init__(self, n_in_channels: int = 1, n_hidden_layers: int = 3, n_kernels: int = 8, kernel_size: int = 7):
         """Simple CNN with `n_hidden_layers`, `n_kernels`, and `kernel_size` as hyperparameters"""
         super(BaseNet, self).__init__()
 
@@ -24,6 +24,7 @@ class BaseNet(nn.Module):
 
     def forward(self, x):
         x = torch.tensor(x, dtype=self.cnn[0].weight.dtype)
+        x = x.reshape(x.size()[0], 1, x.size()[1], x.size()[2])
         """Apply CNN to input `x` of shape (N, n_channels, X, Y), where N=n_samples and X, Y are spatial dimensions"""
         cnn_out = self.hidden_layers(x)  # apply hidden layers (N, n_in_channels, X, Y) -> (N, n_kernels, X, Y)
         pred = self.output_layer(cnn_out)  # apply output layer (N, n_kernels, X, Y) -> (N, 1, X, Y)

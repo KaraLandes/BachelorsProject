@@ -23,8 +23,7 @@ GENIM = False  # generate bills images
 SEGMENT = True  # do image segmentation
 
 
-current_dir = Path(os.getcwd())
-repo = current_dir.parent.absolute()
+repo = Path(os.getcwd())
 ########################################################################################################################
 # Stage 1
 # Within this stage I scrap information about products from online shops.
@@ -117,7 +116,7 @@ if SEGMENT:
     np.random.seed(0)
     indices = np.random.permutation(len(images))
 
-    test_share, valid_share = 0.15, 0.15
+    test_share, valid_share = 0.8, 0.15
     test_share, valid_share = int(test_share*len(images)), int(valid_share*len(images))
     train_share = len(images) - test_share - valid_share
 
@@ -130,12 +129,12 @@ if SEGMENT:
     valid_set = BillSet(imdir, valid_ids, seed=1)
 
     batch_size = 1
-    workers = 1
+    workers = 10
     train_loader = DataLoader(dataset=train_set,
                               batch_size=batch_size,
                               collate_fn=collate_fn,
-                              shuffle=True,
-                              num_workers=workers)
+                              num_workers=workers,
+                              shuffle=True)
     valid_loader = DataLoader(dataset=valid_set,
                               batch_size=batch_size,
                               collate_fn=collate_fn,
@@ -149,11 +148,12 @@ if SEGMENT:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     basenet = BaseNet()
     basenet.to(device)
-    for epoch in range(1,2):
+    for epoch in range(1, 2):
+        print(f"Epoch {epoch}:\n")
         train_results = run_epoch(loader=train_loader, network=basenet,
-                                  optimizer=Adam, learningrate=1e-3, weight_decay=1e-5)
+                                  optimizer=Adam, learningrate=1e-3, weight_decay=1e-5, device=device)
         valid_results = run_epoch(loader=valid_loader, network=basenet,
                                   optimizer=Adam, learningrate=1e-3, weight_decay=1e-5,
-                                  optimize=False)
-        depict(*train_results,name_convention=f"train_epoch {epoch}_",
-               path=os.path.join(repo,"process_tracking","image_segmentation"))
+                                  optimize=False, device=device)
+        depict(loader=train_loader, network=basenet, name_convention=f"train_epoch {epoch}_",
+               path=os.path.join(repo, "process_tracking", "image_segmentation"))

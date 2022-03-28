@@ -54,7 +54,7 @@ class BillSet(Dataset):
             rnd.seed(self.seed)
         # random resize
         percentage = rnd.randint(0, 51) / 100
-        inc_or_dec = 1 if rnd.normal() >= .4 else -1
+        inc_or_dec = -1#1 if rnd.normal() >= .4 else -1
         image.thumbnail(
             size=(int(image.width * (1 + percentage * inc_or_dec)), int(image.height * (1 + percentage * inc_or_dec))),
             resample=Image.ANTIALIAS)
@@ -68,10 +68,10 @@ class BillSet(Dataset):
         background = (rnd.randint(0, 256),)
 
         # define padding from left and top
-        width_difference = rnd_width - image.width
+        width_difference = abs(rnd_width - image.width)+1
         left_pad = rnd.randint(0, width_difference)
 
-        height_difference = rnd_height - image.height
+        height_difference = abs(rnd_height - image.height)+1
         top_pad = rnd.randint(0, height_difference)
 
         # doing padding
@@ -92,7 +92,7 @@ class BillSet(Dataset):
 
         # adding noise
         arr_nim = np.array(new_im).astype(np.float64)
-        noise_percentage = rnd.randint(1, 20) / 100
+        noise_percentage = rnd.randint(1, 30) / 100
         noise_matrix = rnd.randint(0, 100, size=arr_nim.shape) / 100  # noise which I will apply
         criterion_matrix = rnd.normal(0.5, 0.2, size=arr_nim.shape)  # probability that pixel will be changed
         noise_mask = (criterion_matrix <= noise_percentage).astype(np.uint8)  # masking which pixels will change
@@ -124,6 +124,5 @@ def collate_fn(batch):
     # tensors
     collated_msk = torch.from_numpy(collated_msk.astype(np.float32))
     collated_ims = torch.from_numpy(collated_ims.astype(np.float32))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    return collated_ims.to(device), collated_msk.to(device)
+    return collated_ims, collated_msk

@@ -1,19 +1,26 @@
 import os
+import glob
+import torch
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
 from functools import partial
 from multiprocessing import Pool
-
+from torch.utils.data import DataLoader
+from torch.optim import Adam, SGD
 from data_collection_and_preprocessing.scrapper import SparScrapper
 from data_collection_and_preprocessing.generateimages import SparImageGenerator, PennyImageGenerator, BillaImageGenerator
-
+from image_segmentation.data import BillSet, collate_fn
+from image_segmentation.networks import BaseNet
+from image_segmentation.train_evaluate import run_epoch, depict
 
 
 # This file is created to prepare and preprocess all  data
 # HYPERPARAMETERS, WHICH CODE TO RUN
-SCRAP = False #do scrapping from websites
-GENIM = False #generate bills images
+SCRAP = False  # do scrapping from websites
+GENIM = False  # generate bills images
+SEGMENT = True  # do image segmentation
 
 
 current_dir = Path(os.getcwd())
@@ -23,8 +30,10 @@ repo = current_dir.parent.absolute()
 # Within this stage I scrap information about products from online shops.
 # Everything is saved in csv file.
 ########################################################################################################################
-""" Takes full title of product and creates a shortened version. Keeping 3 words, 9 letters max"""
 def shorten(title):
+    """
+    Takes full title of product and creates a shortened version. Keeping 3 words, 9 letters max
+    """
     title = title.split(" ")
     title = [word[:10].upper()+"." if len(word)>9 else word.upper() for word in title[:3]]
     title = " ".join(title)
@@ -102,3 +111,49 @@ if GENIM:
 # In this stage I use generated bills to train a CNN which separated header
 # with supermarket logo and purchased goods from the whole image.
 ########################################################################################################################
+if SEGMENT:
+    imdir = os.path.join(repo, "processed_data", "genbills")
+    images = sorted(glob.glob(os.path.join(imdir, "**", "*.jpg"), recursive=True))
+    np.random.seed(0)
+    indices = np.random.permutation(len(images))
+
+    test_share, valid_share = 0.15, 0.15
+    test_share, valid_share = int(test_share*len(images)), int(valid_share*len(images))
+    train_share = len(images) - test_share - valid_share
+
+    train_ids = indices[:train_share]
+    test_ids = indices[train_share:(train_share+test_share)]
+    valid_ids = indices[(train_share+test_share):]
+
+    train_set = BillSet(imdir, train_ids, coefficient=1)
+    test_set = BillSet(imdir, test_ids, seed=0)
+    valid_set = BillSet(imdir, valid_ids, seed=1)
+
+    batch_size = 1
+    workers = 1
+    train_loader = DataLoader(dataset=train_set,
+                              batch_size=batch_size,
+                              collate_fn=collate_fn,
+                              shuffle=True,
+                              num_workers=workers)
+    valid_loader = DataLoader(dataset=valid_set,
+                              batch_size=batch_size,
+                              collate_fn=collate_fn,
+                              num_workers=workers)
+    test_loader = DataLoader(dataset=test_set,
+                             batch_size=batch_size,
+                             collate_fn=collate_fn,
+                             num_workers=workers)
+
+    # Baseline Network
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    basenet = BaseNet()
+    basenet.to(device)
+    for epoch in range(1,2):
+        train_results = run_epoch(loader=train_loader, network=basenet,
+                                  optimizer=Adam, learningrate=1e-3, weight_decay=1e-5)
+        valid_results = run_epoch(loader=valid_loader, network=basenet,
+                                  optimizer=Adam, learningrate=1e-3, weight_decay=1e-5,
+                                  optimize=False)
+        depict(*train_results,name_convention=f"train_epoch {epoch}_",
+               path=os.path.join(repo,"process_tracking","image_segmentation"))

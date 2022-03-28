@@ -5,26 +5,26 @@ import pandas as pd
 from tqdm import tqdm
 from selenium import webdriver
 
-"""General Class created to scrap goods from online shops
-Should be extended."""
 class Scrapper():
+    """General Class created to scrap goods from online shops
+    Should be extended."""
     def __init__(self, start_url:str, saving_file:str):
         self.homepage = start_url
         self.file = saving_file
         self.driver_path = os.path.abspath(os.path.join("../materials_for_preproseccing/firefox", "geckodriver"))
         self.driver = None
 
-    """Send driver to homepage.
-        https://www.interspar.at/shop/lebensmittel/"""
     def to_homepage(self) -> None:
+        """Send driver to homepage.
+            https://www.interspar.at/shop/lebensmittel/"""
         self.driver.get(self.homepage)
         self.random_sleep()
 
-    """Receiving a dictionary of products from an ÜBERSICHT page it writes a df, 
-        concatenates with already existing csv and updates the csv file.
-        :param: dict with following keys: 'category', 'price', 'summary', 'title'
-                           and values as lists with the same length = number of objects in overview"""
     def write_to_file(self, products: dict) -> None:
+        """Receiving a dictionary of products from an ÜBERSICHT page it writes a df,
+        concatenates with already existing csv and updates the csv file.
+        @param: dict with following keys: 'category', 'price', 'summary', 'title'
+                           and values as lists with the same length = number of objects in overview"""
         new_df = pd.DataFrame(products)
         try:
             csv_df = pd.read_csv(self.file, sep=";", index_col=0)
@@ -33,9 +33,9 @@ class Scrapper():
             full_df = new_df
         full_df.to_csv(self.file, sep=';')
 
-    """Function enables different idling time for
-         marionette driver to behave less suspicious"""
     def random_sleep(self, threshold=1) -> None:
+        """Function enables different idling time for
+            marionette driver to behave less suspicious"""
         long = np.random.random()  # make a long or short delay
         if long > threshold:
             second = np.random.randint(7, 20)
@@ -43,15 +43,16 @@ class Scrapper():
             second = 1
         time.sleep(second)
 
-"""Class which is specifically created for scrappint Spar. Inherits from a general class"""
 class SparScrapper(Scrapper):
+    """Class which is specifically created for scrappint Spar. Inherits from a general class"""
     pass
 
-    """
-    Method establishes driver, goes to spar website and accepts cookies.
-    Nothing is returned. Property self.driver is updated
-    """
+
     def establish_driver(self) -> None:
+        """
+           Method establishes driver, goes to spar website and accepts cookies.
+           Nothing is returned. Property self.driver is updated
+           """
         try: self.driver.quit() # close an old one
         except: pass
 
@@ -75,11 +76,11 @@ class SparScrapper(Scrapper):
         if attempt==5:
             print("Failed to go to homepage.")
 
-    """ 
-    Method opens an overview page of the category by defined id.
-    @:param: cat_id is an integer from 0 to 15 incl.
-    """
     def open_category(self,cat_id) -> None:
+        """
+            Method opens an overview page of the category by defined id.
+            @:param: cat_id is an integer from 0 to 15 incl.
+            """
         self.to_homepage()
         self.random_sleep()
         all_cat = "/html/body/div[8]/div[2]/div[5]/div/div[1]/a"
@@ -98,11 +99,11 @@ class SparScrapper(Scrapper):
             pass
         self.random_sleep()
 
-    """While being inside overall view of some category it collects all products
-    from all pages.
-    :return: dict with following keys: 'category', 'price', 'summary', 'title'
-                       and values as lists with the same length = number of objects in overview"""
     def collect_products(self, start_page = 1) -> None:
+        """While being inside overall view of some category it collects all products
+           from all pages.
+           :return: dict with following keys: 'category', 'price', 'summary', 'title'
+                    and values as lists with the same length = number of objects in overview"""
         holder = []
         page = 1
         while True: #looping over pages
@@ -169,11 +170,11 @@ class SparScrapper(Scrapper):
                 page += 1
             except: break# all pageas are exausted
 
-    """The whole route of retrieving data on all possible
-    items from InterSpar online shop
-    @:param: cat_range Is an iterable filled with integers, each correspondent to a category id
-    @:param: starting_page Is an integer, used in case if I want to scrap only 1 category from a specific page."""
     def scrap(self, cat_range=range(1,16), starting_page=0) -> None:
+        """The whole route of retrieving data on all possible
+            items from InterSpar online shop
+            @:param: cat_range Is an iterable filled with integers, each correspondent to a category id
+            @:param: starting_page Is an integer, used in case if I want to scrap only 1 category from a specific page."""
         self.establish_driver()
         # there are 16 categories
         # but I skip regional products

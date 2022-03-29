@@ -1,14 +1,8 @@
-import pandas as pd
-import numpy as np
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.optim import Adam, SGD
 
 class BaseNet(nn.Module):
-    def __init__(self, n_in_channels: int = 1, n_hidden_layers: int = 3, n_kernels: int = 8, kernel_size: int = 7):
+    def __init__(self, n_in_channels: int = 1, n_hidden_layers: int = 3, n_kernels: int = 8, kernel_size: int = 5):
         """Simple CNN with `n_hidden_layers`, `n_kernels`, and `kernel_size` as hyperparameters"""
         super(BaseNet, self).__init__()
 

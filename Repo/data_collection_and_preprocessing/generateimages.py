@@ -8,9 +8,11 @@ from matplotlib import font_manager
 from matplotlib import pyplot as plt
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from PIL import ImageFile
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
@@ -22,7 +24,6 @@ class ImageGenerator():
         self.font_path = font_path
         self.font_name = font_name
         self.s_name = s_name
-
 
     def generate_bills(self, n: int, clazz: int) -> None:
         """Method which allows to generate an image of supermarket bill
@@ -36,7 +37,7 @@ class ImageGenerator():
 
         # save temporarily, open with pillow, rotate
         figure.savefig(os.path.join(self.directory, f"temp{n}.jpg"))
-        figure = Image.open(os.path.join(self.directory, f"temp{n}.jpg"))
+        figure = Image.open(os.path.join(self.directory, f"temp{n}.jpg")).convert('L')
         figure = figure.rotate(180)
 
         # save finally
@@ -97,7 +98,6 @@ class ImageGenerator():
 
         return sample
 
-
     def _random_word(self, length: tuple, seed: int, capital=True, alluper=False, alllower=False) -> str:
         """A hidden method to generate word-like strings
        @:param length A tuple of integers controlling th length of word
@@ -117,6 +117,40 @@ class ImageGenerator():
             s += ''.join(rnd.choice(lowercase, rnd.randint(length[0], length[1])))
         return s
 
+    def _create_mask(self, yo1: float, yo2: float, yo3: float, yo4: float, xol:float, logo_w: float, width: int, height: int,
+                     cm2inch: float, DPI: int) -> np.array:
+        """
+        This method creates a mask
+        :param yo1: y offset of logo
+        :param yo2: y offset of text1
+        :param yo3: y offset of text2
+        :param xol: x offset of logo
+        :param logo_w: width of logo in cm
+        :param width: width of image
+        :param height: height of image
+        :return: mask with 0 everywhere, 100 on logo, 200 on contents
+        """
+
+        height = int(height * cm2inch * DPI)
+        width = int(width * cm2inch * DPI)
+        mask = np.zeros(shape=(height, width))
+
+        # logo mask
+        logo_start_y = np.round(yo1, 0).astype(int)
+        logo_end_y = np.round(yo2 - 0.255 * cm2inch * DPI, 0).astype(int)
+        logo_start_x = np.round(xol, 0).astype(int)
+        logo_end_x = np.round(logo_start_x + logo_w * cm2inch * DPI, 0).astype(int)
+        mask[logo_start_y:logo_end_y, logo_start_x:logo_end_x] = 100
+
+        # content mask
+        content_start_y = np.round(yo3, 0).astype(int)
+        content_end_y = np.round(yo4 - 0.255 * cm2inch * DPI, 0).astype(int)
+        conten_start_x = np.round(0.5 * cm2inch * DPI, 0).astype(int)
+        mask[content_start_y:content_end_y, conten_start_x:-conten_start_x] = 200
+
+        mask = mask.astype(np.uint8)
+        return mask
+
     def _generate_image(self, sample, seed: int):
         """This Method is rewritten for every supermarket
         @raise ValueError if called from this class"""
@@ -126,6 +160,7 @@ class ImageGenerator():
 
 class SparImageGenerator(ImageGenerator):
     pass
+
     def _generate_image(self, sample: pd.DataFrame, seed: int) -> (plt.Figure, np.array):
         """Hidden method for inside use only.
         Generates an image of bill
@@ -260,25 +295,15 @@ class SparImageGenerator(ImageGenerator):
         bill.figimage(logo_arr, origin='upper', xo=x_offset, yo=y_offset, cmap='binary_r')
 
         # 7 -- create a mask of needed areas
-        width_pixels = int(width * cm2inch * DPI)
-        header_height = int(4 * cm2inch * DPI)
-        ones = np.zeros(shape=(header_height, width_pixels))
-        ones.fill(100)
+        mask = self._create_mask(yo1=y_offset, yo2=y_offset1, yo3=y_offset2, yo4=y_offset3,
+                                 xol=x_offset, logo_w=logo_width, width=width, height=height,
+                                 cm2inch=cm2inch, DPI=DPI)
 
-        content_height = int((text2.count("\n") + 1) * 0.255 * cm2inch * DPI)
-        twos = np.zeros(shape=(content_height, width_pixels))
-        twos.fill(200)
-
-        height_pixels = int(height * cm2inch * DPI)
-        footer_height = height_pixels - content_height - header_height
-        zeros = np.zeros(shape=(footer_height, width_pixels))
-        mask = np.concatenate((ones, twos, zeros), axis=0).astype(np.uint8)
         return bill, mask
 
 
 class PennyImageGenerator(ImageGenerator):
     pass
-
 
     def _generate_image(self, sample: pd.DataFrame, seed: int) -> (plt.Figure, np.array):
         """Hidden method for inside use only.
@@ -425,19 +450,9 @@ class PennyImageGenerator(ImageGenerator):
         bill.figimage(logo_arr, origin='upper', xo=x_offset, yo=y_offset, cmap='binary_r')
 
         # 7 -- create a mask of needed areas
-        width_pixels = int(width * cm2inch * DPI)
-        header_height = int((4.5 + 6 * 0.255) * cm2inch * DPI)
-        ones = np.zeros(shape=(header_height, width_pixels))
-        ones.fill(100)
-
-        content_height = int((text2.count("\n") + 1) * 0.255 * cm2inch * DPI)
-        twos = np.zeros(shape=(content_height, width_pixels))
-        twos.fill(200)
-
-        height_pixels = int(height * cm2inch * DPI)
-        footer_height = height_pixels - content_height - header_height
-        zeros = np.zeros(shape=(footer_height, width_pixels))
-        mask = np.concatenate((ones, twos, zeros), axis=0).astype(np.uint8)
+        mask = self._create_mask(yo1=y_offset, yo2=y_offset1, yo3=y_offset2, yo4=y_offset3,
+                                 xol=x_offset, logo_w=logo_width, width=width, height=height,
+                                 cm2inch=cm2inch, DPI=DPI)
         return bill, mask
 
 
@@ -593,17 +608,7 @@ class BillaImageGenerator(ImageGenerator):
         bill.figimage(logo_arr, origin='upper', xo=x_offset, yo=y_offset, cmap='binary_r')
 
         # 7 -- create a mask of needed areas
-        width_pixels = int(width * cm2inch * DPI)
-        header_height = int((4.8 + 8 * 0.255) * cm2inch * DPI)
-        ones = np.zeros(shape=(header_height, width_pixels))
-        ones.fill(100)
-
-        content_height = int((text2.count("\n") + 1) * 0.255 * cm2inch * DPI)
-        twos = np.zeros(shape=(content_height, width_pixels))
-        twos.fill(200)
-
-        height_pixels = int(height * cm2inch * DPI)
-        footer_height = height_pixels - content_height - header_height
-        zeros = np.zeros(shape=(footer_height, width_pixels))
-        mask = np.concatenate((ones, twos, zeros), axis=0).astype(np.uint8)
+        mask = self._create_mask(yo1=y_offset, yo2=y_offset1, yo3=y_offset2, yo4=y_offset3,
+                                 xol=x_offset, logo_w=logo_width, width=width, height=height,
+                                 cm2inch=cm2inch, DPI=DPI)
         return bill, mask

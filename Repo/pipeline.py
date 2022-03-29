@@ -1,5 +1,7 @@
 import os
 import glob
+import time
+
 import torch
 import numpy as np
 import pandas as pd
@@ -9,6 +11,7 @@ from functools import partial
 from multiprocessing import Pool
 from torch.utils.data import DataLoader
 from torch.optim import Adam, SGD
+from torch.utils.tensorboard import SummaryWriter
 from data_collection_and_preprocessing.scrapper import SparScrapper
 from data_collection_and_preprocessing.generateimages import SparImageGenerator, PennyImageGenerator, BillaImageGenerator
 from image_segmentation.data import BillSet, collate_fn
@@ -69,7 +72,7 @@ if GENIM:
         logo = os.path.join(repo, "materials_for_preprocessing", "logos", l)
         im_gen_MC = SparImageGenerator(saving_path=savedir, data_path=data, logo_path=logo,
                                        font_path=font_dir, font_name=font, s_name='spar')
-        pool = Pool(3)
+        pool = Pool(10)
         f = partial(im_gen_MC.generate_bills,clazz=clazz)  # my function is with 2 args, a way to initialise it
         for _ in tqdm(pool.imap_unordered(f, range(numer_of_bills)), total=numer_of_bills): pass
         pool.close()
@@ -84,7 +87,7 @@ if GENIM:
         logo = os.path.join(repo, "materials_for_preprocessing", "logos", l)
         im_gen_MC = PennyImageGenerator(saving_path=savedir, data_path=data, logo_path=logo,
                                         font_path=font_dir, font_name=font, s_name='penny')
-        pool = Pool(3)
+        pool = Pool(10)
         f = partial(im_gen_MC.generate_bills, clazz=clazz)  # my function is with 2 args, a way to initialise it
         for _ in tqdm(pool.imap_unordered(f, range(numer_of_bills)), total=numer_of_bills): pass
         pool.close()
@@ -99,7 +102,7 @@ if GENIM:
         logo = os.path.join(repo, "materials_for_preprocessing", "logos", l)
         im_gen_MC = BillaImageGenerator(saving_path=savedir, data_path=data, logo_path=logo,
                                         font_path=font_dir, font_name=font, s_name='billa')
-        pool = Pool(3)
+        pool = Pool(10)
         f = partial(im_gen_MC.generate_bills, clazz=clazz)  # my function is with 2 args, a way to initialise it
         for _ in tqdm(pool.imap_unordered(f, range(numer_of_bills)), total=numer_of_bills): pass
         pool.close()
@@ -116,7 +119,7 @@ if SEGMENT:
     np.random.seed(0)
     indices = np.random.permutation(len(images))
 
-    test_share, valid_share = 0.8, 0.15
+    test_share, valid_share = 0.15, 0.15#0.99, 0.005, #
     test_share, valid_share = int(test_share*len(images)), int(valid_share*len(images))
     train_share = len(images) - test_share - valid_share
 
@@ -124,7 +127,7 @@ if SEGMENT:
     test_ids = indices[train_share:(train_share+test_share)]
     valid_ids = indices[(train_share+test_share):]
 
-    train_set = BillSet(imdir, train_ids, coefficient=1)
+    train_set = BillSet(imdir, train_ids, coefficient=1.5)
     test_set = BillSet(imdir, test_ids, seed=0)
     valid_set = BillSet(imdir, valid_ids, seed=1)
 
@@ -138,22 +141,49 @@ if SEGMENT:
     valid_loader = DataLoader(dataset=valid_set,
                               batch_size=batch_size,
                               collate_fn=collate_fn,
-                              num_workers=workers)
+                              num_workers=workers,
+                              shuffle=False)
     test_loader = DataLoader(dataset=test_set,
                              batch_size=batch_size,
                              collate_fn=collate_fn,
-                             num_workers=workers)
+                             num_workers=workers,
+                             shuffle=False)
 
-    # Baseline Network
+    writer = SummaryWriter(log_dir=os.path.join(repo, "progress_tracking", "tensorboard"))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    basenet = BaseNet()
-    basenet.to(device)
-    for epoch in range(1, 2):
-        print(f"Epoch {epoch}:\n")
-        train_results = run_epoch(loader=train_loader, network=basenet,
-                                  optimizer=Adam, learningrate=1e-3, weight_decay=1e-5, device=device)
-        valid_results = run_epoch(loader=valid_loader, network=basenet,
-                                  optimizer=Adam, learningrate=1e-3, weight_decay=1e-5,
-                                  optimize=False, device=device)
-        depict(loader=train_loader, network=basenet, name_convention=f"train_epoch {epoch}_",
-               path=os.path.join(repo, "process_tracking", "image_segmentation"))
+    train_base = True
+    # Baseline Network
+    if train_base:
+        basenet = BaseNet(n_hidden_layers=7)
+        basenet.to(device)
+        train_losses, valid_losses = [], []
+        for epoch in range(1, 10+1):
+            print(f"\nEpoch {epoch}:")
+            time.sleep(1)
+            train_results = run_epoch(loader=train_loader, network=basenet, writer=writer,
+                                      optimizer=Adam, learningrate=1e-3, weight_decay=1e-5, device=device)
+            valid_results = run_epoch(loader=valid_loader, network=basenet, writer=writer,
+                                      optimizer=Adam, learningrate=1e-3, weight_decay=1e-5,
+                                      optimize=False, device=device)
+            mean_tr_loss, mean_val_loss = np.mean(train_results), np.mean(valid_results)
+            train_losses.append(mean_tr_loss)
+            valid_losses.append(mean_val_loss)
+            torch.save(basenet.state_dict(),
+                       os.path.join(repo, "progress_tracking", "image_segmentation", "models", f"basenet_epoch{epoch}.pt"))
+            writer.add_scalars("BaseNet_Loss",
+                               {
+                                   "Training": mean_tr_loss,
+                                   "Validation": mean_val_loss
+                               },
+                               global_step=epoch)
+            print("Train Loss\t\t", "{:.2f}".format(mean_tr_loss))
+            print("Validation Loss\t", "{:.2f}".format(mean_val_loss))
+            depict(loader=train_loader, network=basenet, name_convention=f"train_epoch{epoch}_", num=5, writer=None,
+                   path=os.path.join(repo, "progress_tracking", "image_segmentation", "visualization"), device=device)
+            depict(loader=train_loader, network=basenet, name_convention=f"valid_epoch{epoch}_", num=5, writer=writer,
+                   path=os.path.join(repo, "progress_tracking", "image_segmentation", "visualization"), device=device)
+            writer.flush()
+        np.save(os.path.join(repo, "progress_tracking", "image_segmentation", "models", f"basenet_trainlosses.npy"),
+                train_losses)
+        np.save(os.path.join(repo, "progress_tracking", "image_segmentation", "models", f"basenet_validlosses.npy"),
+                valid_losses)

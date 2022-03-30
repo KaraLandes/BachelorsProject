@@ -9,14 +9,12 @@ from tqdm import tqdm
 from pathlib import Path
 from functools import partial
 from multiprocessing import Pool
-from torch.utils.data import DataLoader
 from torch.optim import Adam, SGD
-from torch.utils.tensorboard import SummaryWriter
 from data_collection_and_preprocessing.scrapper import SparScrapper
 from data_collection_and_preprocessing.generateimages import SparImageGenerator, PennyImageGenerator, BillaImageGenerator
-from image_segmentation.data import BillSet, collate_fn
-from image_segmentation.networks import BaseNet
-from image_segmentation.train_evaluate import run_epoch, depict
+from image_segmentation.data import BillSet, BoxedBillSet
+from image_segmentation.networks import BaseNet, MRCNN
+from image_segmentation.train_evaluate import Train, Evaluate
 
 
 # This file is created to prepare and preprocess all  data
@@ -27,6 +25,7 @@ SEGMENT = True  # do image segmentation
 
 
 repo = Path(os.getcwd())
+repo = repo.parent.absolute()
 ########################################################################################################################
 # Stage 1
 # Within this stage I scrap information about products from online shops.
@@ -115,75 +114,32 @@ if GENIM:
 ########################################################################################################################
 if SEGMENT:
     imdir = os.path.join(repo, "processed_data", "genbills")
-    images = sorted(glob.glob(os.path.join(imdir, "**", "*.jpg"), recursive=True))
-    np.random.seed(0)
-    indices = np.random.permutation(len(images))
 
-    test_share, valid_share = 0.15, 0.15#0.99, 0.005, #
-    test_share, valid_share = int(test_share*len(images)), int(valid_share*len(images))
-    train_share = len(images) - test_share - valid_share
+    # Baseline Network (dummy CNN)
+    # basenet = BaseNet(n_hidden_layers=7)
+    #
+    # train_base = Train(im_dir=imdir, network=basenet)
+    # train_base.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BillSet)
+    # train_base.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "tensorboard"))
+    # train_base.set_loaders(collate_fn_type=train_base.collate_fn_simple)
+    # train_base.set_device()
+    # save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "models", "basenet", "basenet_")
+    # save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", 'basenet', "visualization")
+    # train_base.train(optimiser=Adam(basenet.parameters(), lr=1e-3, weight_decay=1e-5),
+    #                  save_model_path=save_model_path,
+    #                  save_images_path=save_images_path)
 
-    train_ids = indices[:train_share]
-    test_ids = indices[train_share:(train_share+test_share)]
-    valid_ids = indices[(train_share+test_share):]
+    # Mask Regioned Network (Mask R-CNN)
+    mrcnnet = MRCNN(num_classes=2).get_model()
+    parameters = [p for p in mrcnnet.parameters() if p.requires_grad]
 
-    train_set = BillSet(imdir, train_ids, coefficient=1.5)
-    test_set = BillSet(imdir, test_ids, seed=0)
-    valid_set = BillSet(imdir, valid_ids, seed=1)
-
-    batch_size = 1
-    workers = 10
-    train_loader = DataLoader(dataset=train_set,
-                              batch_size=batch_size,
-                              collate_fn=collate_fn,
-                              num_workers=workers,
-                              shuffle=True)
-    valid_loader = DataLoader(dataset=valid_set,
-                              batch_size=batch_size,
-                              collate_fn=collate_fn,
-                              num_workers=workers,
-                              shuffle=False)
-    test_loader = DataLoader(dataset=test_set,
-                             batch_size=batch_size,
-                             collate_fn=collate_fn,
-                             num_workers=workers,
-                             shuffle=False)
-
-    writer = SummaryWriter(log_dir=os.path.join(repo, "progress_tracking", "tensorboard"))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_base = True
-    # Baseline Network
-    if train_base:
-        basenet = BaseNet(n_hidden_layers=7)
-        basenet.to(device)
-        train_losses, valid_losses = [], []
-        for epoch in range(1, 10+1):
-            print(f"\nEpoch {epoch}:")
-            time.sleep(1)
-            train_results = run_epoch(loader=train_loader, network=basenet, writer=writer,
-                                      optimizer=Adam, learningrate=1e-3, weight_decay=1e-5, device=device)
-            valid_results = run_epoch(loader=valid_loader, network=basenet, writer=writer,
-                                      optimizer=Adam, learningrate=1e-3, weight_decay=1e-5,
-                                      optimize=False, device=device)
-            mean_tr_loss, mean_val_loss = np.mean(train_results), np.mean(valid_results)
-            train_losses.append(mean_tr_loss)
-            valid_losses.append(mean_val_loss)
-            torch.save(basenet.state_dict(),
-                       os.path.join(repo, "progress_tracking", "image_segmentation", "models", f"basenet_epoch{epoch}.pt"))
-            writer.add_scalars("BaseNet_Loss",
-                               {
-                                   "Training": mean_tr_loss,
-                                   "Validation": mean_val_loss
-                               },
-                               global_step=epoch)
-            print("Train Loss\t\t", "{:.2f}".format(mean_tr_loss))
-            print("Validation Loss\t", "{:.2f}".format(mean_val_loss))
-            depict(loader=train_loader, network=basenet, name_convention=f"train_epoch{epoch}_", num=5, writer=None,
-                   path=os.path.join(repo, "progress_tracking", "image_segmentation", "visualization"), device=device)
-            depict(loader=train_loader, network=basenet, name_convention=f"valid_epoch{epoch}_", num=5, writer=writer,
-                   path=os.path.join(repo, "progress_tracking", "image_segmentation", "visualization"), device=device)
-            writer.flush()
-        np.save(os.path.join(repo, "progress_tracking", "image_segmentation", "models", f"basenet_trainlosses.npy"),
-                train_losses)
-        np.save(os.path.join(repo, "progress_tracking", "image_segmentation", "models", f"basenet_validlosses.npy"),
-                valid_losses)
+    train_mrcnn = Train(im_dir=imdir, network=mrcnnet)
+    train_mrcnn.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BoxedBillSet)
+    train_mrcnn.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "tensorboard"))
+    train_mrcnn.set_loaders(collate_fn_type=train_mrcnn.collate_fn_rcnn)
+    train_mrcnn.set_device()
+    save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "models", "maskrcnn_")
+    save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "visualization")
+    train_mrcnn.train(optimiser=Adam(parameters, lr=1e-3, weight_decay=1e-5),
+                     save_model_path=save_model_path,
+                     save_images_path=save_images_path)

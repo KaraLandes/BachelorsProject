@@ -102,27 +102,43 @@ class BillSet(Dataset):
 
         return arr_nim.astype(np.uint8), np.array(new_mask).astype(np.uint8)
 
-def collate_fn(batch):
-    max_r, max_c = 0, 0
-    for im, msk in batch:
-        if im.shape[0] > max_r: max_r = im.shape[0]
-        if im.shape[1] > max_c: max_c = im.shape[1]
-    target_shape = (max_r, max_c)
 
-    # shape = elements in batch, rows, cols
-    collated_ims = np.zeros(shape=(len(batch), target_shape[0], target_shape[1]))
-    collated_msk = np.zeros(shape=(len(batch), target_shape[0], target_shape[1]))
+class BoxedBillSet(BillSet):
+    """
+    This class is created as extension of BillSet class.
+    Additional functionality is reflected in getitem method, where
+    additionally b-boxed are returned
+    """
+    pass
+    def __getitem__(self, idx):
+        im, msk = self.images[idx], self.masks[idx]
+        im, msk = Image.open(im).convert('L'), Image.fromarray(np.load(msk))
+        im, msk = self.preprocess_image(im, msk)
 
-    # fill with values
-    for i, (im, msk) in enumerate(batch):
-        collated_ims[i][:im.shape[0], :im.shape[1]] = im
-        collated_msk[i][:msk.shape[0], :msk.shape[1]] = msk
+        #boxes are desribed by x0, y0, x1, y1
+        #in my case I have 2 boxes per each image
+        boxes = np.zeros(shape=(2,4))
+        ones = np.argwhere(msk==100)
+        boxes[0] = np.array([ones[0,0], ones[0,1], ones[-1,0], ones[-1,1]])
+        twos = np.argwhere(msk==200)
+        boxes[1] = np.array([twos[0,0], twos[0,1], twos[-1,0], twos[-1,1]])
 
-    # normalise
-    # TODO ???
+        #areas -- there are 2 numbers corresponding to b-boxes areas
+        areas = np.array([ones.shape[0], twos.shape[0]])
 
-    # tensors
-    collated_msk = torch.from_numpy(collated_msk.astype(np.float32))
-    collated_ims = torch.from_numpy(collated_ims.astype(np.float32))
+        #modified masks -- masks are splitted to 2 different layers
+        modified_masks = np.zeros(shape=(2, msk.shape[0], msk.shape[1]))
+        modified_masks[0][ones] = 1
+        modified_masks[1][twos] = 1
 
-    return collated_ims, collated_msk
+        #creating final target dictionary
+        target = {
+                  'boxes': torch.from_numpy(boxes.astype(np.int64)),
+                  'area': torch.from_numpy(areas),
+                  'labels': torch.from_numpy(np.array([1, 2]).astype(np.int64)),
+                  'image_id': torch.from_numpy(np.array([idx]).astype(np.int64)),
+                  'masks': list(modified_masks),  # this is changed in collate fn!!!
+                  'iscrowd': torch.from_numpy(np.array([False, False]).astype(np.uint8))
+                  }
+
+        return im, target

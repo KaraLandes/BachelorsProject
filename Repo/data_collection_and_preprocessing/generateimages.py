@@ -117,15 +117,16 @@ class ImageGenerator():
             s += ''.join(rnd.choice(lowercase, rnd.randint(length[0], length[1])))
         return s
 
-    def _create_mask(self, yo1: float, yo2: float, yo3: float, yo4: float, xol:float, logo_w: float, width: int, height: int,
-                     cm2inch: float, DPI: int) -> np.array:
+    def _create_mask(self, yo1: float, yo2: float, yo3: float, xol:float, logo_w: float, logo_h: float,
+                     width: int, height: int, cm2inch: float, DPI: int) -> np.array:
         """
         This method creates a mask
         :param yo1: y offset of logo
-        :param yo2: y offset of text1
-        :param yo3: y offset of text2
+        :param yo2: y offset of text2
+        :param yo2: y offset of text3
         :param xol: x offset of logo
         :param logo_w: width of logo in cm
+        :param logo_h: height of logo in cm
         :param width: width of image
         :param height: height of image
         :return: mask with 0 everywhere, 100 on logo, 200 on contents
@@ -137,14 +138,14 @@ class ImageGenerator():
 
         # logo mask
         logo_start_y = np.round(yo1, 0).astype(int)
-        logo_end_y = np.round(yo2 - 0.255 * cm2inch * DPI, 0).astype(int)
+        logo_end_y = np.round(logo_start_y + logo_h * cm2inch * DPI, 0).astype(int)
         logo_start_x = np.round(xol, 0).astype(int)
         logo_end_x = np.round(logo_start_x + logo_w * cm2inch * DPI, 0).astype(int)
         mask[logo_start_y:logo_end_y, logo_start_x:logo_end_x] = 100
 
         # content mask
-        content_start_y = np.round(yo3, 0).astype(int)
-        content_end_y = np.round(yo4 - 0.255 * cm2inch * DPI, 0).astype(int)
+        content_start_y = np.round(yo2, 0).astype(int)
+        content_end_y = np.round(yo3 - 0.255 * cm2inch * DPI, 0).astype(int)
         conten_start_x = np.round(0.5 * cm2inch * DPI, 0).astype(int)
         mask[content_start_y:content_end_y, conten_start_x:-conten_start_x] = 200
 
@@ -295,7 +296,7 @@ class SparImageGenerator(ImageGenerator):
         bill.figimage(logo_arr, origin='upper', xo=x_offset, yo=y_offset, cmap='binary_r')
 
         # 7 -- create a mask of needed areas
-        mask = self._create_mask(yo1=y_offset, yo2=y_offset1, yo3=y_offset2, yo4=y_offset3,
+        mask = self._create_mask(yo1=y_offset, yo2=y_offset2, yo3=y_offset3, logo_h=logo.size[1]/(cm2inch * DPI),
                                  xol=x_offset, logo_w=logo_width, width=width, height=height,
                                  cm2inch=cm2inch, DPI=DPI)
 
@@ -450,7 +451,7 @@ class PennyImageGenerator(ImageGenerator):
         bill.figimage(logo_arr, origin='upper', xo=x_offset, yo=y_offset, cmap='binary_r')
 
         # 7 -- create a mask of needed areas
-        mask = self._create_mask(yo1=y_offset, yo2=y_offset1, yo3=y_offset2, yo4=y_offset3,
+        mask = self._create_mask(yo1=y_offset, yo2=y_offset2, yo3=y_offset3, logo_h=logo.size[1] / (cm2inch * DPI),
                                  xol=x_offset, logo_w=logo_width, width=width, height=height,
                                  cm2inch=cm2inch, DPI=DPI)
         return bill, mask
@@ -608,7 +609,7 @@ class BillaImageGenerator(ImageGenerator):
         bill.figimage(logo_arr, origin='upper', xo=x_offset, yo=y_offset, cmap='binary_r')
 
         # 7 -- create a mask of needed areas
-        mask = self._create_mask(yo1=y_offset, yo2=y_offset1, yo3=y_offset2, yo4=y_offset3,
+        mask = self._create_mask(yo1=y_offset, yo2=y_offset2, yo3=y_offset3, logo_h=logo.size[1] / (cm2inch * DPI),
                                  xol=x_offset, logo_w=logo_width, width=width, height=height,
                                  cm2inch=cm2inch, DPI=DPI)
         return bill, mask

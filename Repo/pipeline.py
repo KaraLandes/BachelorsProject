@@ -1,9 +1,5 @@
 import os
-import glob
-import time
 
-import torch
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
@@ -25,7 +21,7 @@ SEGMENT = True  # do image segmentation
 
 
 repo = Path(os.getcwd())
-repo = repo.parent.absolute()
+# repo = repo.parent.absolute()
 ########################################################################################################################
 # Stage 1
 # Within this stage I scrap information about products from online shops.
@@ -116,30 +112,30 @@ if SEGMENT:
     imdir = os.path.join(repo, "processed_data", "genbills")
 
     # Baseline Network (dummy CNN)
-    # basenet = BaseNet(n_hidden_layers=7)
-    #
-    # train_base = Train(im_dir=imdir, network=basenet)
-    # train_base.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BillSet)
-    # train_base.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "tensorboard"))
-    # train_base.set_loaders(collate_fn_type=train_base.collate_fn_simple)
-    # train_base.set_device()
-    # save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "models", "basenet", "basenet_")
-    # save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", 'basenet', "visualization")
-    # train_base.train(optimiser=Adam(basenet.parameters(), lr=1e-3, weight_decay=1e-5),
-    #                  save_model_path=save_model_path,
-    #                  save_images_path=save_images_path)
+    basenet = BaseNet(n_hidden_layers=10)
 
-    # Mask Regioned Network (Mask R-CNN)
-    mrcnnet = MRCNN(num_classes=2).get_model()
-    parameters = [p for p in mrcnnet.parameters() if p.requires_grad]
-
-    train_mrcnn = Train(im_dir=imdir, network=mrcnnet)
-    train_mrcnn.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BoxedBillSet)
-    train_mrcnn.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "tensorboard"))
-    train_mrcnn.set_loaders(collate_fn_type=train_mrcnn.collate_fn_rcnn)
-    train_mrcnn.set_device()
-    save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "models", "maskrcnn_")
-    save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "visualization")
-    train_mrcnn.train(optimiser=Adam(parameters, lr=1e-3, weight_decay=1e-5),
+    train_base = Train(im_dir=imdir, network=basenet)
+    train_base.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BillSet, coefficient=1)
+    train_base.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "tensorboard"))
+    train_base.set_loaders(collate_fn_type=train_base.collate_fn_simple, batch_size=1)
+    train_base.set_device()
+    save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "models",  "basenet_")
+    save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", 'basenet', "visualization")
+    train_base.train(optimiser=Adam(basenet.parameters(), lr=1e-3, weight_decay=1e-5),
                      save_model_path=save_model_path,
                      save_images_path=save_images_path)
+
+    # # Mask Regioned Network (Mask R-CNN)
+    # mrcnnet = MRCNN(num_classes=3).get_model() #3 classes - background, logo, content
+    # parameters = [p for p in mrcnnet.parameters() if p.requires_grad]
+    #
+    # train_mrcnn = Train(im_dir=imdir, network=mrcnnet)
+    # train_mrcnn.set_datasets(valid_share=0.005, test_share=0.99, dataset_type=BoxedBillSet)
+    # train_mrcnn.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "tensorboard"))
+    # train_mrcnn.set_loaders(collate_fn_type=train_mrcnn.collate_fn_rcnn, workers=1)
+    # train_mrcnn.set_device()
+    # save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "models", "maskrcnn_")
+    # save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "visualization")
+    # train_mrcnn.train(optimiser=Adam(parameters, lr=1e-3, weight_decay=1e-5),
+    #                   save_model_path=save_model_path,
+    #                   save_images_path=save_images_path)

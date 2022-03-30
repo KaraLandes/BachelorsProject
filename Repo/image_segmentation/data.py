@@ -41,7 +41,13 @@ class BillSet(Dataset):
         im, msk = self.images[idx], self.masks[idx]
         im, msk = Image.open(im).convert('L'), Image.fromarray(np.load(msk))
         im, msk = self.preprocess_image(im, msk)
-        return im, msk
+
+        # make mask to be 2 layers
+        new_msk = np.zeros((2, msk.shape[0], msk.shape[1]))
+        new_msk[0] = np.where(msk == 100, 1, 0)
+        new_msk[1] = np.where(msk == 200, 1, 0)
+
+        return im, new_msk
 
     def preprocess_image(self, image: Image, mask: Image) -> (Image, Image):
         """This method received one image and mask, adds noise and padding
@@ -53,8 +59,8 @@ class BillSet(Dataset):
         if not self.seed is None:
             rnd.seed(self.seed)
         # random resize
-        percentage = rnd.randint(0, 51) / 100
-        inc_or_dec = -1#1 if rnd.normal() >= .4 else -1
+        percentage = rnd.randint(20, 61) / 100  # making smaller helps to fit everything to CUDA
+        inc_or_dec = -1  # 1 if rnd.normal() >= .4 else -1
         image.thumbnail(
             size=(int(image.width * (1 + percentage * inc_or_dec)), int(image.height * (1 + percentage * inc_or_dec))),
             resample=Image.ANTIALIAS)
@@ -63,15 +69,15 @@ class BillSet(Dataset):
             resample=Image.ANTIALIAS)
 
         # define background size and colour, should be bigger than image
-        rnd_width = rnd.randint(image.width, image.width * 3)
-        rnd_height = rnd.randint(image.height, image.height * 3)
+        rnd_width = rnd.randint(image.width, image.width * 2)
+        rnd_height = rnd.randint(image.height, image.height * 2)
         background = (rnd.randint(0, 256),)
 
         # define padding from left and top
-        width_difference = abs(rnd_width - image.width)+1
+        width_difference = abs(rnd_width - image.width) + 1
         left_pad = rnd.randint(0, width_difference)
 
-        height_difference = abs(rnd_height - image.height)+1
+        height_difference = abs(rnd_height - image.height) + 1
         top_pad = rnd.randint(0, height_difference)
 
         # doing padding
@@ -81,7 +87,7 @@ class BillSet(Dataset):
         new_mask.paste(mask, (left_pad, top_pad))
 
         # add rotation
-        if rnd.normal() >= .4:
+        if rnd.normal() >= 0:
             degrees = rnd.randint(0, 20)
             inc_or_dec = 1 if rnd.normal() >= .5 else -1
         else:
@@ -100,7 +106,16 @@ class BillSet(Dataset):
         noise_matrix += (1 - noise_mask)  # bring zeros to ones
         arr_nim *= noise_matrix  # apply noise
 
-        return arr_nim.astype(np.uint8), np.array(new_mask).astype(np.uint8)
+        # verifying the mask
+        # apparently there ere not only 0, 100, 200 values, but also some close ones.
+        # bringing it to 0, 100, 200 exactly
+        # new_mask = np.where(np.isclose(new_mask, 0, atol=50), 0, new_mask)
+        new_mask = np.array(new_mask).astype(np.uint8)
+        new_mask = np.where(np.isclose(new_mask, 100), 100, new_mask)
+        new_mask = np.where(np.isclose(new_mask, 200), 200, new_mask)
+        new_mask = np.where((new_mask != 100) & (new_mask != 200), 0, new_mask)
+
+        return arr_nim.astype(np.uint8), new_mask
 
 
 class BoxedBillSet(BillSet):
@@ -110,35 +125,40 @@ class BoxedBillSet(BillSet):
     additionally b-boxed are returned
     """
     pass
+
     def __getitem__(self, idx):
         im, msk = self.images[idx], self.masks[idx]
         im, msk = Image.open(im).convert('L'), Image.fromarray(np.load(msk))
         im, msk = self.preprocess_image(im, msk)
 
-        #boxes are desribed by x0, y0, x1, y1
-        #in my case I have 2 boxes per each image
-        boxes = np.zeros(shape=(2,4))
-        ones = np.argwhere(msk==100)
-        boxes[0] = np.array([ones[0,0], ones[0,1], ones[-1,0], ones[-1,1]])
-        twos = np.argwhere(msk==200)
-        boxes[1] = np.array([twos[0,0], twos[0,1], twos[-1,0], twos[-1,1]])
+        # boxes are described by x0, y0, x1, y1
+        # in my case I have 2 boxes per each image
+        boxes = np.zeros(shape=(2, 4))
+        ones = np.argwhere(msk == 100)
+        x0, x1 = np.min(ones[:, 1]), np.max(ones[:, 1])
+        y0, y1 = np.min(ones[:, 0]), np.max(ones[:, 0])
+        boxes[0] = np.array([x0, y0, x1, y1])
+        twos = np.argwhere(msk == 200)
+        x0, x1 = np.min(twos[:, 1]), np.max(twos[:, 1])
+        y0, y1 = np.min(twos[:, 0]), np.max(twos[:, 0])
+        boxes[1] = np.array([x0, y0, x1, y1])
 
-        #areas -- there are 2 numbers corresponding to b-boxes areas
+        # areas -- there are 2 numbers corresponding to b-boxes areas
         areas = np.array([ones.shape[0], twos.shape[0]])
 
-        #modified masks -- masks are splitted to 2 different layers
-        modified_masks = np.zeros(shape=(2, msk.shape[0], msk.shape[1]))
-        modified_masks[0][ones] = 1
-        modified_masks[1][twos] = 1
+        # modified masks -- masks are splitted to 2 different layers
+        modified_masks = [np.zeros(shape=(msk.shape[0], msk.shape[1])), np.zeros(shape=(msk.shape[0], msk.shape[1]))]
+        modified_masks[0] = np.where(msk == 100, 1, 0)
+        modified_masks[1] = np.where(msk == 200, 1, 0)
 
-        #creating final target dictionary
+        # creating final target dictionary
         target = {
-                  'boxes': torch.from_numpy(boxes.astype(np.int64)),
-                  'area': torch.from_numpy(areas),
-                  'labels': torch.from_numpy(np.array([1, 2]).astype(np.int64)),
-                  'image_id': torch.from_numpy(np.array([idx]).astype(np.int64)),
-                  'masks': list(modified_masks),  # this is changed in collate fn!!!
-                  'iscrowd': torch.from_numpy(np.array([False, False]).astype(np.uint8))
-                  }
+            'boxes': torch.from_numpy(boxes.astype(np.int64)),
+            'area': torch.from_numpy(areas),
+            'labels': torch.from_numpy(np.array([1, 2]).astype(np.int64)),
+            'image_id': torch.from_numpy(np.array([idx]).astype(np.int64)),
+            'masks': modified_masks,  # this is changed in collate fn!!!
+            'iscrowd': torch.from_numpy(np.array([False, False]).astype(np.uint8))
+        }
 
         return im, target

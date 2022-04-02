@@ -5,10 +5,10 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
 
-class BaseNet(nn.Module):
+class BaseNetDetect(nn.Module):
     def __init__(self, n_in_channels: int = 1, n_hidden_layers: int = 3, n_kernels: int = 3, kernel_size: int = 11):
         """Simple CNN with `n_hidden_layers`, `n_kernels`, and `kernel_size` as hyper-parameters"""
-        super(BaseNet, self).__init__()
+        super(BaseNetDetect, self).__init__()
 
         self.cnn = []
         for i in range(n_hidden_layers):

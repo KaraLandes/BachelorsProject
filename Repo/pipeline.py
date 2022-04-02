@@ -10,14 +10,15 @@ from data_collection_and_preprocessing.scrapper import SparScrapper
 from data_collection_and_preprocessing.generateimages import SparImageGenerator, PennyImageGenerator, BillaImageGenerator
 from image_segmentation.data import BillSet, BoxedBillSet
 from image_segmentation.networks import BaseNet, MRCNN
-from image_segmentation.train_evaluate import Train, Evaluate
+from image_segmentation.train_evaluate import TrainBase, TrainMask
 
 
 # This file is created to prepare and preprocess all  data
 # HYPERPARAMETERS, WHICH CODE TO RUN
 SCRAP = False  # do scrapping from websites
 GENIM = False  # generate bills images
-SEGMENT = True  # do image segmentation
+DETECT = True  # detect bills on images
+SEGMENT = False  # do image segmentation
 
 
 repo = Path(os.getcwd())
@@ -105,6 +106,28 @@ if GENIM:
 
 ########################################################################################################################
 # Stage 3
+# In this stage I use generated bills to train a CNN which returns cleared bill image only
+########################################################################################################################
+if DETECT:
+    imdir = os.path.join(repo, "processed_data", "genbills")
+
+    # Baseline Network (just CNN)
+    basenet_de = BaseNet(n_hidden_layers=2, n_kernels=3)
+
+    train_base = TrainBase(im_dir=imdir, network=basenet)
+    train_base.set_datasets(valid_share=.15, test_share=.15, dataset_type=BillSet, coefficient=2)
+    train_base.set_writer(
+        log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "tensorboard"))
+    train_base.set_loaders(batch_size=2)
+    train_base.set_device()
+    save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "models", "basenet_")
+    save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", 'basenet', "visualization")
+    train_base.train(optimiser=Adam(basenet.parameters(), lr=1e-1, weight_decay=1e-5),
+                     save_model_path=save_model_path, epochs=50,
+                     save_images_path=save_images_path)
+
+########################################################################################################################
+# Stage 4
 # In this stage I use generated bills to train a CNN which separated header
 # with supermarket logo and purchased goods from the whole image.
 ########################################################################################################################
@@ -112,30 +135,30 @@ if SEGMENT:
     imdir = os.path.join(repo, "processed_data", "genbills")
 
     # Baseline Network (dummy CNN)
-    basenet = BaseNet(n_hidden_layers=10)
+    basenet = BaseNet(n_hidden_layers=2, n_kernels=3)
 
-    train_base = Train(im_dir=imdir, network=basenet)
-    train_base.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BillSet, coefficient=1)
+    train_base = TrainBase(im_dir=imdir, network=basenet)
+    train_base.set_datasets(valid_share=.15, test_share=.15, dataset_type=BillSet, coefficient=2)
     train_base.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "tensorboard"))
-    train_base.set_loaders(collate_fn_type=train_base.collate_fn_simple, batch_size=1)
+    train_base.set_loaders(batch_size=2)
     train_base.set_device()
     save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "basenet", "models",  "basenet_")
     save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", 'basenet', "visualization")
-    train_base.train(optimiser=Adam(basenet.parameters(), lr=1e-3, weight_decay=1e-5),
-                     save_model_path=save_model_path,
+    train_base.train(optimiser=Adam(basenet.parameters(), lr=1e-1, weight_decay=1e-5),
+                     save_model_path=save_model_path, epochs=50,
                      save_images_path=save_images_path)
 
-    # # Mask Regioned Network (Mask R-CNN)
-    # mrcnnet = MRCNN(num_classes=3).get_model() #3 classes - background, logo, content
-    # parameters = [p for p in mrcnnet.parameters() if p.requires_grad]
-    #
-    # train_mrcnn = Train(im_dir=imdir, network=mrcnnet)
-    # train_mrcnn.set_datasets(valid_share=0.005, test_share=0.99, dataset_type=BoxedBillSet)
-    # train_mrcnn.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "tensorboard"))
-    # train_mrcnn.set_loaders(collate_fn_type=train_mrcnn.collate_fn_rcnn, workers=1)
-    # train_mrcnn.set_device()
-    # save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "models", "maskrcnn_")
-    # save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "visualization")
-    # train_mrcnn.train(optimiser=Adam(parameters, lr=1e-3, weight_decay=1e-5),
-    #                   save_model_path=save_model_path,
-    #                   save_images_path=save_images_path)
+    # Mask Regioned Network (Mask R-CNN)
+    mrcnnet = MRCNN(num_classes=3).get_model() #3 classes - background, logo, content
+    parameters = [p for p in mrcnnet.parameters() if p.requires_grad]
+
+    train_mrcnn = TrainMask(im_dir=imdir, network=mrcnnet)
+    train_mrcnn.set_datasets(valid_share=0.15, test_share=0.15, dataset_type=BoxedBillSet, coefficient=2)
+    train_mrcnn.set_writer(log_dir=os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "tensorboard"))
+    train_mrcnn.set_loaders(workers=1)
+    train_mrcnn.set_device()
+    save_model_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "models", "maskrcnn_")
+    save_images_path = os.path.join(repo, "progress_tracking", "image_segmentation", "maskrcnn", "visualization")
+    train_mrcnn.train(optimiser=Adam(parameters, lr=1e-3, weight_decay=1e-5),
+                      save_model_path=save_model_path,
+                      save_images_path=save_images_path)

@@ -102,7 +102,7 @@ if JOINT_CORNERS_DETECTOR:
 
     network.vgg16_enc.requires_grad_(False)
     params = [p for p in network.parameters() if p.requires_grad == True]
-    opt = Adam(params, lr=3e-4, weight_decay=5e-5)
+    opt = Adam(params, lr=5e-5, weight_decay=5e-6)
 
     train_class.train(optimizer=opt,
                       save_model_path=save_model_path, epochs=81, method=train_class.depict_corners,

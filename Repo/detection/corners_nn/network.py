@@ -140,9 +140,9 @@ class CornerDetector(nn.Module):
         self.fnns = []
         self.fnns.append(torch.nn.Linear(64 * 32 * 32, 256))
         self.fnns.append(torch.nn.ReLU())
-        self.fnns.append(torch.nn.Linear(256, 32))
+        self.fnns.append(torch.nn.Linear(256, 64))
         self.fnns.append(torch.nn.ReLU())
-        self.fnns.append(torch.nn.Linear(32, 8))
+        self.fnns.append(torch.nn.Linear(64, 8))
         self.fnns.append(torch.nn.ReLU())
         self.fnns = torch.nn.Sequential(*self.fnns)
 

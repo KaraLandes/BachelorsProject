@@ -17,6 +17,8 @@ class CornerBillOnBackGroundSet(AbstractBillOnBackGroundSet):
         output_shape = self.output_shape
         image, mask = self.preprocess_image(image, seed, output_shape)
 
+        image = image.convert("L").filter(ImageFilter.UnsharpMask(radius=2, percent=200))
+
         mask = np.array(mask)
         mask[mask < 250] = 0
         mask[mask >= 250] = 255
@@ -54,7 +56,7 @@ class CornerRealBillSet(AbstractRealBillSet):
         image, mask = self.preprocess_image(image, mask, output_shape=(400, 400),
                                             im_name=im_name, seed=seed)  # I keep huge shape for better corners
         # edges enhancer
-        image = image.filter(ImageFilter.UnsharpMask(radius=2, percent=150))
+        image = image.filter(ImageFilter.UnsharpMask(radius=2, percent=500))
         # reshape to final
         image.thumbnail(size=output_shape, resample=Image.ANTIALIAS)
 

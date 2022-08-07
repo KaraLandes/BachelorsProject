@@ -22,9 +22,9 @@ repo = Path(os.getcwd())
 if DETECT:
     net = CornerDetector(compute_attention=True).to('cuda')
     net.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
-                                                "run_256_2", 'corners_nn_on_ep15_new_best_model_370.0.pt')))
+                                                "run_128_4", 'corners_nn_on_ep6_new_best_model_100.0.pt')))
 
-    bills = CornerRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(256, 256), coefficient=1)
+    bills = CornerRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(128, 128), coefficient=1)
     train_class = TrainCorner("", "", "", network=net)
     loader = DataLoader(dataset=bills, batch_size=1, num_workers=2, collate_fn=train_class.collate_fn)
 
@@ -70,7 +70,7 @@ if DETECT:
             ax.axis("off")
             plt.tight_layout(pad=2)
 
-            fig.savefig(os.path.join("real_bills_results", 'detection', "corners", f"{num}.png"), dpi=200)
+            # fig.savefig(os.path.join("real_bills_results", 'detection', "corners", f"{num}.png"), dpi=200)
             num += 1
             plt.close('all')
             plt.cla()

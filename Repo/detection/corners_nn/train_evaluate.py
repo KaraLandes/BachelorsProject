@@ -50,7 +50,7 @@ class TrainCorner(Train):
             else: self.net.eval()
 
             im = im.to(self.device)
-            corners_trg = (corners_trg+(torch.randn(len(corners_trg), 8)*2)).to(self.device)
+            corners_trg = corners_trg.to(self.device)
             mask_trg = mask_trg.to(self.device).to(torch.long)
             coords_pred, mask_pred = self.net(im)
 

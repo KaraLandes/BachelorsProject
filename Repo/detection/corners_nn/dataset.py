@@ -30,12 +30,17 @@ class CornerBillOnBackGroundSet(AbstractBillOnBackGroundSet):
         # mask_in[mask == 0] = 1
 
         image = np.array(image)
-        mask_dims = (int(output_shape[0]/8), int(output_shape[0]/8))
+        mask_dims = (int(output_shape[0]/4), int(output_shape[0]/4))
         corners_mask = np.zeros(mask_dims)
         for c in corners_relative:
-            corners_32 = (int(c[0] * corners_mask.shape[0]),
-                          int(c[1] * corners_mask.shape[0]))
-            corners_mask[corners_32[1], corners_32[0]] = 1
+            corners_32 = (np.round(c[0] * corners_mask.shape[0], 0).astype(int),
+                          np.round(int(c[1] * corners_mask.shape[0]), 0).astype(int))
+            xstart = 0 if corners_32[0] - 1 < 0 else corners_32[0] - 1
+            ystart = 0 if corners_32[1] - 1 < 0 else corners_32[1] - 1
+            xend = mask_dims[-2] if corners_32[0] + 1 > mask_dims[-2] else corners_32[0] + 1
+            yend = mask_dims[-2] if corners_32[1] + 1 > mask_dims[-2] else corners_32[1] + 1
+
+            corners_mask[ystart:yend, xstart:xend] = 1
 
 
         mask = cv2.resize(mask, dsize=mask_dims, interpolation=cv2.INTER_AREA)
@@ -68,12 +73,17 @@ class CornerRealBillSet(AbstractRealBillSet):
 
         image = np.array(image)
 
-        mask_dims = (int(output_shape[0] / 8), int(output_shape[0] / 8))
+        mask_dims = (int(output_shape[0] / 4), int(output_shape[0] / 4))
         corners_mask = np.zeros(mask_dims)
         for c in corners_relative:
-            corners_32 = (int(c[0] * corners_mask.shape[0]),
-                          int(c[1] * corners_mask.shape[0]))
-            corners_mask[corners_32[1], corners_32[0]] = 1
+            corners_32 = (np.round(c[0] * corners_mask.shape[0], 0).astype(int),
+                          np.round(int(c[1] * corners_mask.shape[0]), 0).astype(int))
+            xstart = 0 if corners_32[0] - 1 < 0 else corners_32[0] - 1
+            ystart = 0 if corners_32[1] - 1 < 0 else corners_32[1] - 1
+            xend = mask_dims[-2] if corners_32[0] + 1 > mask_dims[-2] else corners_32[0] + 1
+            yend = mask_dims[-2] if corners_32[1] + 1 > mask_dims[-2] else corners_32[1] + 1
+
+            corners_mask[ystart:yend, xstart:xend] = 1
 
         mask_in = cv2.resize(mask_in, dsize=mask_dims, interpolation=cv2.INTER_AREA)
 

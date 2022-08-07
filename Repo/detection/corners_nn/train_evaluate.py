@@ -55,8 +55,11 @@ class TrainCorner(Train):
             coords_pred, mask_pred = self.net(im)
 
             l_corner = criterion(coords_pred, corners_trg)
-            l_mask = criterion2(mask_pred, mask_trg)
-            l_total = l_corner+l_mask
+            if self.net.compute_attention:
+                l_mask = criterion2(mask_pred, mask_trg)
+                l_total = l_corner+l_mask
+            else:
+                l_total = l_corner
 
             if optimize:
                 optimizer.zero_grad()
@@ -94,8 +97,10 @@ class TrainCorner(Train):
                 corners_pred = predictions[0][j].to('cpu').detach().numpy()
 
                 mask_trg = masks_trgs[j].to('cpu').detach().numpy()
-                masks_pred = predictions[1][j].to('cpu').detach().numpy()
-                masks_pred = masks_pred[1, :]
+                if not self.net.compute_attention: masks_pred = np.zeros(mask_trg.shape)
+                else:
+                    masks_pred = predictions[1][j].to('cpu').detach().numpy()
+                    masks_pred = masks_pred[1, :]
 
                 allimages.append(image)
                 alltargets.append((corners_trg, mask_trg))
@@ -115,6 +120,7 @@ class TrainCorner(Train):
             im = im[0].reshape(im.shape[-2], im.shape[-1])
             corner_pred, mask_pred = pred
             corner_trg, mask_trg = trg
+
             fig, ax = plt.subplots(1, 3, figsize=(20*3, 20+7))
             ax[0].imshow(im, cmap="binary_r")
 

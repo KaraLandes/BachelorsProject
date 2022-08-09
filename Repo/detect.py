@@ -8,10 +8,10 @@ from torch.optim import Adam
 
 # This file is created to prepare and preprocess all  data
 # HYPERPARAMETERS, WHICH CODE TO RUN
-DUMMY = False  # detect bills on images
-FASTRCNN = False
-JOINT_CORNERS_DETECTOR = True
-CORNERS_REFINEMENT = False
+DUMMY = 0  # detect bills on images
+FASTRCNN = 0
+JOINT_CORNERS_DETECTOR = 1
+CORNERS_REFINEMENT = 1
 
 repo = Path(os.getcwd())
 # repo = repo.parent.absolute()
@@ -92,7 +92,7 @@ if JOINT_CORNERS_DETECTOR:
                               network=network)
     train_class.set_datasets(train_dataset_type=CornerBillOnBackGroundSet,
                              valid_dataset_type=CornerRealBillSet, coefficient=1,
-                             output_shape=(128, 128))
+                             output_shape=(80, 80))
     train_class.set_writer(
         log_dir=os.path.join(repo, "progress_tracking", "detection/corners_nn", "tensorboard"))
     train_class.set_loaders(batch_size=8)
@@ -102,7 +102,7 @@ if JOINT_CORNERS_DETECTOR:
 
     network.vgg16_enc.requires_grad_(False)
     params = [p for p in network.parameters() if p.requires_grad == True]
-    opt = Adam(params, lr=5e-5, weight_decay=5e-6)
+    opt = Adam(params, lr=1e-4, weight_decay=5e-1)
 
     train_class.train(optimizer=opt,
                       save_model_path=save_model_path, epochs=81, method=train_class.depict_corners,
@@ -114,7 +114,7 @@ if CORNERS_REFINEMENT:
     from detection.refine_nn.train_evaluate import TrainRefine
 
     # we have 4 patterns and therefore 4 training processes for red, blue, green, yellow
-    for type in ['red', 'green', 'blue', 'yellow']:
+    for type in ['red', 'green', 'blue', 'yellow']: # ['red', 'green', 'blue', 'yellow']
         network = RefineNet(net_type=type)
         for p in network.parameters():
             if p.requires_grad:
@@ -126,17 +126,17 @@ if CORNERS_REFINEMENT:
                                   network=network)
         train_class.set_datasets(train_dataset_type=RefineBillOnBackGroundSet,
                                  valid_dataset_type=RefineRealBillSet, coefficient=1,
-                                 output_shape=(128, 128))
+                                 output_shape=(80, 80))
         train_class.set_writer(
             log_dir=os.path.join(repo, "progress_tracking", "detection/refine_nn", type, "tensorboard"))
-        train_class.set_loaders(batch_size=8, workers=12)
+        train_class.set_loaders(batch_size=8, workers=11)
         train_class.set_device()
         save_model_path = os.path.join(repo, "progress_tracking", "detection/refine_nn", type, "models", "corners_nn")
         save_images_path = os.path.join(repo, "progress_tracking", "detection/refine_nn", type, "visualization")
 
         network.vgg.requires_grad_(False)
         params = [p for p in network.parameters() if p.requires_grad == True]
-        opt = Adam(params, lr=1e-3, weight_decay=5e-5)
+        opt = Adam(params, lr=1e-3, weight_decay=5e-6)
         train_class.train(optimizer=opt,
-                          save_model_path=save_model_path, epochs=30, method=train_class.depict_refinement,
+                          save_model_path=save_model_path, epochs=40, method=train_class.depict_refinement,
                           save_images_path=save_images_path)

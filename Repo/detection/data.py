@@ -39,7 +39,7 @@ class AbstractBillOnBackGroundSet(Dataset):
 
     def __getitem__(self, idx):
         im = self.images[idx]
-        im = Image.open(im).convert('L')
+        im = Image.open(im).convert('RGB')
         im, trg = self.form_target(im, idx)
 
         return im, trg
@@ -86,7 +86,7 @@ class AbstractBillOnBackGroundSet(Dataset):
         background = np.random.choice(textures, size=1)[0]
         rnd_width = np.random.randint(image.width, image.width * 2)
         rnd_height = np.random.randint(image.height, image.height * 2)
-        background = Image.open(background).convert('L')
+        background = Image.open(background).convert('RGB')
         background = background.transform(size=(rnd_width, rnd_height),
                                           method=Image.EXTENT,
                                           data=(0, 0, background.width, background.height))  # resize, enlarge
@@ -120,12 +120,12 @@ class AbstractBillOnBackGroundSet(Dataset):
         background *= noise_matrix  # apply noise
 
         # 7 do the mask as big as background
-        mask_big = np.zeros(shape=background.shape)
+        mask_big = np.zeros(shape=background.shape[:-1])
         mask_big[top_pad:top_pad + image.shape[0], left_pad:left_pad + image.shape[1]] = mask
         mask = mask_big
 
         # 8 unifying size
-        image = Image.fromarray(background)
+        image = Image.fromarray(background.astype(np.uint8))
         mask = Image.fromarray(mask)
         dims = output_shape
         image.thumbnail(size=dims, resample=Image.ANTIALIAS)
@@ -133,7 +133,7 @@ class AbstractBillOnBackGroundSet(Dataset):
         new_im = Image.new(image.mode, output_shape, (0,))
         new_im.paste(image, (0, 0))
 
-        mask_b = Image.new(image.mode, output_shape, (0,))
+        mask_b = Image.new(mask.mode, output_shape, (0,))
         mask_b.paste(mask, (0, 0))
 
         return new_im, mask_b
@@ -196,7 +196,7 @@ class AbstractRealBillSet(Dataset):
     def __getitem__(self, idx):
         im = self.images[idx]
         msk = self.masks[idx]
-        im = (Image.open(im).convert('L'))
+        im = (Image.open(im).convert('RGB'))
         msk = (Image.open(msk).convert('L'))
         im, trg = self.form_target(im, msk, idx, im_name=self.images[idx])
 
@@ -256,7 +256,7 @@ class AbstractRealBillSet(Dataset):
         mask[:, :10] = 255
         mask[:, -10:] = 255
         mask = Image.fromarray(mask)
-        mask_b = Image.new(image.mode, output_shape, (255,))
+        mask_b = Image.new(mask.mode, output_shape, (255,))
         mask_b.paste(mask, (0, 0))
 
         return new_im, mask_b

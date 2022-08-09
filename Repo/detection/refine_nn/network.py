@@ -9,7 +9,13 @@ class VGGEncoder(nn.Module):
 
         vgg = torchvision.models.vgg16(pretrained=True)
         for p in vgg.parameters(): p.requires_grad = False
-        self.vgg = vgg.features[0:23]#15
+        self.vgg = vgg.features[0:15]#15
+        # self.vgg = []
+        # self.vgg.append(nn.Conv2d(in_channels=2, out_channels=32, kernel_size=5, stride=1))
+        # for i in range(4):
+        #     self.vgg.append(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=5, stride=1))
+        # self.vgg = nn.Sequential(*self.vgg)
+
 
     def forward(self, x):
         out = self.vgg(x)
@@ -23,13 +29,13 @@ class RefineNet(nn.Module):
         self.vgg = VGGEncoder()
 
         self.conv = []
-        self.conv.append(nn.Conv2d(in_channels=512, out_channels=128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)))
-        self.conv.append(nn.Conv2d(in_channels=128, out_channels=32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)))
+        self.conv.append(nn.Conv2d(in_channels=256, out_channels=64, kernel_size=(5, 5), stride=(1, 1), padding=(1, 1)))
+        self.conv.append(nn.Conv2d(in_channels=64, out_channels=32, kernel_size=(5, 5), stride=(1, 1), padding=(1, 1)))
         self.conv = nn.Sequential(*self.conv)
 
         self.fnn = []
-        self.fnn.append(nn.Linear(32 * 8 * 8, 32))
-        self.fnn.append(nn.Linear(32, 2))
+        self.fnn.append(nn.Linear(32 * 8 * 8, 256))
+        self.fnn.append(nn.Linear(256, 2))
         self.fnn = nn.Sequential(*self.fnn)
 
     def forward(self, x):
@@ -39,7 +45,6 @@ class RefineNet(nn.Module):
         :param x: input batch
         :return: predictions
         """
-
         x = x.expand(3, x.shape[-2], x.shape[-1])
         x = self.vgg(x.float())
         x = self.conv(x)

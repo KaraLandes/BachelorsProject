@@ -138,7 +138,7 @@ class CornerDetector(nn.Module):
         if compute_attention: self.attention = AttentionMask()
 
         self.fnns = []
-        self.fnns.append(torch.nn.Linear(64 * 32 * 32, 256))
+        self.fnns.append(torch.nn.Linear(64 * 20 * 20, 256))
         self.fnns.append(torch.nn.ReLU())
         self.fnns.append(torch.nn.Linear(256, 64))
         self.fnns.append(torch.nn.ReLU())

@@ -118,6 +118,7 @@ class Train():
             torch.cuda.empty_cache()
             self.evaluate(method=method, loader=self.train_loader, device=self.device,
                           path=save_images_path, naming=f"train_epoch_{epoch}")
+            # train_results = []
 
 
             train_results_2 = self.run_epoch(loader=self.train_loader_2, optimizer=optimizer,
@@ -125,6 +126,9 @@ class Train():
                                              save_model_path=save_model_path, epoch_num=epoch,
                                              criterion=loss_box)
             torch.cuda.empty_cache()
+            # self.evaluate(method=method, loader=self.train_loader_2, device=self.device,
+            #               path=save_images_path, naming=f"train2_epoch_{epoch}")
+            # train_results_2 = []
             valid_results = self.run_epoch(loader=self.valid_loader, optimizer=optimizer,
                                            optimize=False,
                                            save_model_path=save_model_path, epoch_num=None,

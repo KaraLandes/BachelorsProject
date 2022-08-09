@@ -6,6 +6,7 @@ import torch
 from tqdm import tqdm
 import numpy as np
 from ..train import Train
+import matplotlib.image as mpimg
 
 
 class TrainCorner(Train):
@@ -21,13 +22,13 @@ class TrainCorner(Train):
 
         for i, b in enumerate(batch):
             im, corners, masks = b[0], b[1][0], b[1][1]
-            im = [el / 255 for el in im]
+            im = im/255
             im = torch.tensor(im).to(torch.float32)
             collated_ims.append(im)
             collated_corners.append(torch.tensor(np.array(corners).flatten()).to(torch.float32))
             collated_masks.append(torch.tensor(masks).to(torch.float32))
 
-        collated_ims = [el.expand(3, el.shape[-2], el.shape[-1]) for el in collated_ims]
+        # collated_ims = [el.expand(3, el.shape[-2], el.shape[-1]) for el in collated_ims]
         collated_ims = torch.stack(collated_ims)
         collated_corners = torch.stack(collated_corners)
         collated_masks = torch.stack(collated_masks)
@@ -117,7 +118,11 @@ class TrainCorner(Train):
         This function saves plots and pictures of network performance
         """
         for i, im, trg, pred in zip(range(len(images)), images, targets, predictions):
-            im = im[0].reshape(im.shape[-2], im.shape[-1])
+            temp = np.zeros((80, 80, 3))
+            temp[:, :, 0] = im[0]
+            temp[:, :, 1] = im[1]
+            temp[:, :, 2] = im[2]
+            im = np.array(temp)
             corner_pred, mask_pred = pred
             corner_trg, mask_trg = trg
 
@@ -155,7 +160,7 @@ class TrainCorner(Train):
 
 
             plt.tight_layout(pad=2)
-            fig.savefig(os.path.join(path, name_convention + "_imagenum_" + str(i).zfill(2) + ".png"), dpi=200)
+            fig.savefig(os.path.join(path, name_convention + "_imagenum_" + str(i).zfill(2) + ".png"), dpi=50)
 
             plt.close('all')
             plt.cla()

@@ -118,7 +118,7 @@ class TrainCorner(Train):
         This function saves plots and pictures of network performance
         """
         for i, im, trg, pred in zip(range(len(images)), images, targets, predictions):
-            temp = np.zeros((80, 80, 3))
+            temp = np.zeros((im.shape[1], im.shape[1], 3))
             temp[:, :, 0] = im[0]
             temp[:, :, 1] = im[1]
             temp[:, :, 2] = im[2]

@@ -26,12 +26,12 @@ class FastRCNN(nn.Module):
         """
         im, trg, optimize = x
         im = [el/255 for el in im]
-        im = [el.expand(3, el.shape[-2], el.shape[-1]) for el in im]
+        # im = [el.expand(3, el.shape[-2], el.shape[-1]) for el in im]
 
         if optimize: # I switched to using inbuilt training function, because my implementation was faulty
             self.rcnn.train()
-            rcnn_loss = self.rcnn(im,trg)
-        else: rcnn_loss = {"dummy":0}
+            rcnn_loss = self.rcnn(im, trg)
+        else: rcnn_loss = {"dummy": 0}
 
         self.rcnn.eval()
         rcnn_pred = self.rcnn(im)

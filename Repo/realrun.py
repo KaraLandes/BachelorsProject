@@ -14,8 +14,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 # HYPERPARAMETERS, WHICH CODE TO RUN
-DETECT_CORNERS = 1
-DETECT_REFINE =0
+DETECT_CORNERS = 0
+DETECT_REFINE = 1
 repo = Path(os.getcwd())
 
 ########################################################################################################################
@@ -100,30 +100,31 @@ if DETECT_CORNERS:
 
     f = plt.figure()
     plt.boxplot(distances_big)
+    plt.ylim((0, 300))
     f.savefig(os.path.join("real_bills_results", 'detection', "corners", f"big_dist_80_e17_unseen.png"), dpi=50)
 
 if DETECT_REFINE:
     jcd = CornerDetector(compute_attention=True).to('cuda')
     jcd.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
-                                                "run_64_1", 'corners_nn_on_ep22_new_best_model_19.0.pt')))
+                                                "run_80_1", 'corners_nn_on_ep17_new_best_model_32.0.pt')))
 
 
     crn = RefineNet(net_type="red")#dummy instance
-    bills = RefineRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(64, 64),
+    bills = RefineRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(80, 80),
                               coefficient=1)
     num = 1000 # 0 or 1000
     train_class = TrainRefine("", "", "", network=crn)
-
-    loader = DataLoader(dataset=bills, batch_size=1, num_workers=1, collate_fn=train_class.collate_fn,
+    train_class.set_device()
+    loader = DataLoader(dataset=bills, batch_size=1, num_workers=11, collate_fn=train_class.collate_fn,
                         shuffle=False)
     best_nets = [os.path.join(repo, "progress_tracking", "detection/refine_nn", "red", 'models',
-                              'corners_nn_on_ep10_new_best_model_2694.0.pt'),
+                              'corners_nn_on_ep8_new_best_model_64.0.pt'),
                  os.path.join(repo, "progress_tracking", "detection/refine_nn", "green", 'models',
-                              'corners_nn_on_ep19_new_best_model_3661.0.pt'),
+                              'corners_nn_on_ep6_new_best_model_84.0.pt'),
                  os.path.join(repo, "progress_tracking", "detection/refine_nn", "blue", 'models',
-                              'corners_nn_on_ep2_new_best_model_3794.0.pt'),
+                              'corners_nn_on_ep6_new_best_model_69.0.pt'),
                  os.path.join(repo, "progress_tracking", "detection/refine_nn", "yellow", 'models',
-                              'corners_nn_on_ep11_new_best_model_3539.0.pt')
+                              'corners_nn_on_ep7_new_best_model_77.0.pt')
                  ]
     colors = ["red", 'green', 'blue', 'yellow']
     distances_big =[[], [], [], []]
@@ -134,62 +135,74 @@ if DETECT_REFINE:
         coords_pred = torch.reshape(coords_pred, shape=(len(coords_pred), 4, 2))
         corners_big = torch.reshape(corners_big, shape=(len(corners_big), 4, 2))
 
-        big_corners_pred = torch.tensor([[train_class.rescale_corners(c, im, originals)
-                                          for c in el] for el in coords_pred])
+        big_corners_pred = torch.stack([torch.stack([train_class.rescale_corner(c, im.shape[-2:], originals.shape[-2:])
+                                                     for c in el]) for el in coords_pred])
 
         refine_corners_pred = []
-        for type, state_dict in zip(colors, best_nets):
+        for active_id, type, state_dict in zip(range(len(colors)), colors, best_nets):
             crn = RefineNet(net_type=type)
             state_dict = torch.load(state_dict)
             crn.load_state_dict(state_dict)
-            train_class.net = crn
+            train_class.net = crn.to(train_class.device)
 
-            patches, old_prediction, target_refine_net, \
-            target_general, offsets = train_class.initial_crop(originals=originals,
-                                                               big_corners_pred=big_corners_pred,
-                                                               corners_big=corners_big,
-                                                               output_shape=(16, 16),
-                                                               window=200)
+            p, _, changes = train_class.crop(original=train_class.numpy(originals[0]),
+                                             old_prediction=train_class.numpy(big_corners_pred[0][active_id]),
+                                             changes={},
+                                             mask=np.zeros(originals[0].shape[-2:]))
+            sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=False)
+            p = torch.tensor(p).to(train_class.device)
 
-            p = patches[0].to(train_class.device)
-            n_p = train_class.net(p)
-            o_p = old_prediction[0]
-            t_r_n = target_refine_net[0]
-            changes = {}
+            o_p_big = big_corners_pred[0][active_id]
+            o_p_for_net = train_class.apply_changes(o_p_big, sorted_changes)
 
-            changes[f"{0:02d} offset"] = torch.tensor(offsets[0][0])
-            changes[f"{1:02d} rescale"] = {"to": offsets[0][1][1], "from": offsets[0][1][0]}
-            changes[f"{2:02d} prediction"] = torch.clone(n_p.detach())
-
-            n_p, changes = train_class.refine_loop(False, None, torch.nn.MSELoss(reduction="mean"), changes, n_p, o_p, t_r_n, p)
-
-            # when no more cropping happens I retrack the most current prediction to the original size and calculate loss
+            o_p_for_net = o_p_for_net / p.shape[-1]  # relative
+            n_p, mask_pred = train_class.net((p, o_p_for_net))
+            n_p_on_patch = n_p * p.shape[-2]
             sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=True)
-            pred_point = torch.clone(n_p.detach())
-            pred_point = train_class.untracking_changes(sorted_changes, pred_point)
+            n_p_big = train_class.untrack_changes(n_p_on_patch, sorted_changes)
 
-            refine_corners_pred.append(pred_point)
+            pred_point, _ = train_class.refine_loop(n_p_big=n_p_big,
+                                                    o_p_big=o_p_big,
+                                                    target=corners_big[0][active_id],
+                                                    changes=changes,
+                                                    patch=p)
+
+            #TODO al this prediction cycle for every net type
+            refine_corners_pred.append(train_class.numpy(pred_point))
+
+        # predictions averaging
+        beta = [.8, .8, .8, .8]
+        averaged_prediction = []
+        for rc, bc, bt in zip(refine_corners_pred, train_class.numpy(big_corners_pred[0]), beta):
+            c = rc*bt + bc*(1-bt)
+            averaged_prediction.append(c)
+        averaged_prediction = np.array(averaged_prediction)
 
         fig, ax = plt.subplots(1, 2, figsize=(24*2+5, 24))
-        ax[0].imshow(originals[0][0], cmap="binary_r")
-        ax[1].imshow(originals[0][0], cmap="binary_r")
+        temp = np.zeros((originals[0].shape[1], originals[0].shape[1], 3))
+        temp[:, :, 0] = originals[0][0]
+        temp[:, :, 1] = originals[0][1]
+        temp[:, :, 2] = originals[0][2]
+        ax[0].imshow(temp)
+        ax[1].imshow(temp)
 
         for c, col in zip(corners_big[0], colors): ax[0].scatter(c[0], c[1], c=col, s=1000, marker='o')
         for c, col in zip(corners_big[0], colors): ax[1].scatter(c[0], c[1], c=col, s=1000, marker='o')
 
         for j, col in zip(range(4), colors):
-            c = refine_corners_pred[j]
-            prev_c = refine_corners_pred[j - 1]
-            ax[0].scatter(c[0], c[1], c=col, s=1000, marker='X')
-            ax[0].plot((c[0], prev_c[0]), (c[1], prev_c[1]), c="red", ls=":")
+            c = averaged_prediction[j]
+            prev_c = averaged_prediction[j - 1]
+            ax[1].scatter(c[0], c[1], c=col, s=1000, marker='X')
+            ax[1].plot((c[0], prev_c[0]), (c[1], prev_c[1]), c="red", ls=":")
 
-            distances_big[j].append(np.sqrt(sum((c - corners_big[0][j]) ** 2)))
+            distances_big[j].append(np.sqrt(sum((c - train_class.numpy(corners_big[0][j])) ** 2)))
 
+        big_corners_pred = train_class.numpy(big_corners_pred)
         for j, col in zip(range(4), colors):
             c = big_corners_pred[0][j]
             prev_c = big_corners_pred[0][j - 1]
-            ax[1].scatter(c[0], c[1], c=col, s=1000, marker='X')
-            ax[1].plot((c[0], prev_c[0]), (c[1], prev_c[1]), c="red", ls=":")
+            ax[0].scatter(c[0], c[1], c=col, s=1000, marker='X')
+            ax[0].plot((c[0], prev_c[0]), (c[1], prev_c[1]), c="red", ls=":")
 
         ax[0].set_title("Corners NN, Predictions - ☓, True - ◯", fontsize=50)
         ax[1].set_title("Refine NN, Predictions - ☓, True - ◯", fontsize=50)
@@ -218,4 +231,5 @@ if DETECT_REFINE:
 
     f = plt.figure()
     plt.boxplot(distances_big)
-    f.savefig(os.path.join("real_bills_results", 'detection', "refine", f"big_dist_unseen.png"), dpi=50)
+    plt.ylim((0, 300))
+    f.savefig(os.path.join("real_bills_results", 'detection', "refine", f"big_dist_unseen_beta_{beta}.png"), dpi=50)

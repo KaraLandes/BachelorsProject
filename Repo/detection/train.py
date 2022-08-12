@@ -109,7 +109,7 @@ class Train():
         loss_box = torch.nn.MSELoss()
 
         for epoch in range(1, epochs + 1):
-            print(f"\nEpoch {epoch}:")
+            print(f"\nEpoch {epoch}: {'#'*100}")
             time.sleep(1)
             train_results = self.run_epoch(loader=self.train_loader, optimizer=optimizer,
                                            optimize=True,
@@ -181,13 +181,18 @@ class Train():
         This function saves plots and pictures of network performance
         """
         for i, im, trg, pred in zip(range(len(images)), images, targets, predictions):
-            im = im.reshape(im.shape[-2], im.shape[-1])
+            # im = im.reshape(im.shape[-2], im.shape[-1])
+            temp = np.zeros((im.shape[1], im.shape[1], 3))
+            temp[:, :, 0] = im[0]
+            temp[:, :, 1] = im[1]
+            temp[:, :, 2] = im[2]
+            temp = temp.astype(np.int)
 
-            true_masked = im[trg[0]:trg[1], trg[2]:trg[3]]  # cropping
-            pred_masked = im[pred[0]:pred[1], pred[2]:pred[3]]
+            true_masked = temp[trg[0]:trg[1], trg[2]:trg[3]]  # cropping
+            pred_masked = temp[pred[0]:pred[1], pred[2]:pred[3]]
 
             fig, ax = plt.subplots(1, 3, figsize=(24, 8))
-            ax[0].imshow(im, cmap="binary_r")
+            ax[0].imshow(temp)
             true_box = patches.Rectangle((trg[2], trg[0]), trg[3] - trg[2], trg[1] - trg[0],
                                          linewidth=1, edgecolor='g', facecolor='none',
                                          label=f"True box")
@@ -202,10 +207,10 @@ class Train():
                                 pos.width, pos.height * 0.9])
             ax[0].legend(loc='upper center', bbox_to_anchor=(.5, .05), fontsize=10)
             ax[0].axis("off")
-            ax[1].imshow(true_masked, cmap="binary_r")
+            ax[1].imshow(true_masked)
             ax[1].set_title("Should be Masked", fontsize=30)
             ax[1].axis("off")
-            ax[2].imshow(pred_masked, cmap="binary_r")
+            ax[2].imshow(pred_masked)
             ax[2].set_title("Masked by model", fontsize=30)
             ax[2].axis("off")
             plt.tight_layout(pad=2)

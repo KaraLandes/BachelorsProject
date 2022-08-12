@@ -186,8 +186,10 @@ class AbstractRealBillSet(Dataset):
         """
         self.images = sorted(glob.glob(os.path.join(image_dir, "*.jpg"), recursive=False))
         self.images = self.images*coefficient
+        # self.images = self.images[:8]
         self.masks = sorted(glob.glob(os.path.join(image_dir, "[m]*.png"), recursive=False))
         self.masks = self.masks*coefficient
+        # self.masks = self.masks[:8]
         self.output_shape = output_shape
 
     def __len__(self):

@@ -6,7 +6,6 @@ from torchvision.ops import box_iou
 from ..train import Train
 
 
-
 class TrainFRCNN(Train):
     def collate_fn(self, batch):
         """
@@ -18,14 +17,14 @@ class TrainFRCNN(Train):
         collated_trg_dicts = []
 
         for i, (im, trg) in enumerate(batch):
-            im = np.reshape(im, (1, im.shape[0], im.shape[1]))
+            # im = np.reshape(im, (1, im.shape[0], im.shape[1]))
             collated_ims.append(torch.tensor(im).to(torch.float32))
             collated_trg_dicts.append(trg)
 
         return collated_ims, collated_trg_dicts
 
-    def run_epoch(self, loader: DataLoader, optimizer: torch.optim.Optimizer, save_model_path:str,
-                  epoch_num:int=None, optimize=True, criterion=torch.nn.MSELoss()) -> list:
+    def run_epoch(self, loader: DataLoader, optimizer: torch.optim.Optimizer, save_model_path: str,
+                  epoch_num: int = None, optimize=True, criterion=torch.nn.MSELoss()) -> list:
         """
         This is function which loops over loader once and does a forward pass through the network.
         @:return list of lost values of individual batches
@@ -39,27 +38,17 @@ class TrainFRCNN(Train):
 
             im = [el.to(self.device) for el in im]
             trg = [{k: v.to(self.device) for k, v in t.items()} for t in trg]
-            pred, l_box = self.net((im,trg,optimize))
+            pred, l_box = self.net((im, trg, optimize))
 
             # I take the best prediction
             # sometimes no element recognised, and there are 0 boxes predicted
             pred_boxes = []
-            # for pred_el, trg_el in zip(pred,trg):
-            #     ious = []
-            #     if len(pred_el['boxes'])>0:
-            #         for box in pred_el['boxes']:
-            #             iou = box_iou(torch.unsqueeze(box.to(torch.int),0), trg_el['boxes'].to(torch.int)).flatten()[0]
-            #             ious.append(iou)
-            #         best_box_id = torch.argmax(torch.stack(ious))
-            #         pred_boxes.append(pred_el['boxes'][best_box_id])
-            #     else:
-            #         pred_boxes.append(torch.tensor([0,0,0,0]).to(torch.float32).to(self.device))
-            for pred_el, trg_el in zip(pred,trg):
-                if len(pred_el['boxes'])>0:
+            for pred_el, trg_el in zip(pred, trg):
+                if len(pred_el['boxes']) > 0:
                     best_box_id = 0
                     pred_boxes.append(pred_el['boxes'][best_box_id])
                 else:
-                    pred_boxes.append(torch.tensor([0,0,0,0]).to(torch.float32).to(self.device))
+                    pred_boxes.append(torch.tensor([0, 0, 0, 0]).to(torch.float32).to(self.device))
 
             pred_boxes = torch.stack(pred_boxes)
             trg_boxes = torch.flatten(torch.stack([el['boxes'] for el in trg]), 1)
@@ -82,7 +71,7 @@ class TrainFRCNN(Train):
                                     global_step=i)
             self.writer.flush()
 
-            #epoch early stopping
+            # epoch early stopping
             if optimize and l_box.detach().item() < best_loss:
                 count_no_improvement = 0
                 best_loss = best_loss
@@ -101,14 +90,14 @@ class TrainFRCNN(Train):
         count = 0
         for i, (images, targets) in enumerate(loader):
             images = [el.to(self.device) for el in images]
-            targets= [{k: v.to(self.device) for k, v in t.items()} for t in targets]
+            targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
             predictions, _ = self.net((images, targets, False))
             for j in range(len(images)):
                 if count == num: break
                 image = images[j].to('cpu').detach().numpy()
 
                 target = targets[j]['boxes'].to('cpu').detach().numpy()[0].astype(int)
-                target[1], target[2] = target[2], target[1] # bring to x0,x1,y0,y1 as i have in depict
+                target[1], target[2] = target[2], target[1]  # bring to x0,x1,y0,y1 as i have in depict
 
                 prediction = predictions[j]['boxes'].to('cpu').detach().numpy().astype(int)
 
@@ -127,7 +116,7 @@ class TrainFRCNN(Train):
                 else:
                     prediction = np.array([0, 0, 100, 100])
 
-                prediction[1], prediction[2] = prediction[2], prediction[1] # bring to x0,x1,y0,y1 as i have in depict
+                prediction[1], prediction[2] = prediction[2], prediction[1]  # bring to x0,x1,y0,y1 as i have in depict
 
                 allimages.append(image)
                 alltargets.append(target)

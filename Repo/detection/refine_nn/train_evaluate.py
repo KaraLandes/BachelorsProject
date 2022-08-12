@@ -1,5 +1,6 @@
 import operator
 import os
+from pathlib import Path
 
 import cv2
 from matplotlib import pyplot as plt
@@ -42,7 +43,7 @@ class TrainRefine(Train):
         collated_ims = [el.expand(3, el.shape[-2], el.shape[-1]) for el in collated_ims]
         collated_ims = torch.stack(collated_ims)
 
-        collated_originals = [el.expand(3, el.shape[-2], el.shape[-1]) for el in collated_originals]
+        # collated_originals = [el.expand(3, el.shape[-2], el.shape[-1]) for el in collated_originals]
         collated_originals = torch.stack(collated_originals)
         collated_corners = torch.stack(collated_corners)
         collated_corners_big = torch.stack(collated_corners_big)
@@ -62,54 +63,70 @@ class TrainRefine(Train):
         joint_corner_net = self.set_JCD()
         loss_values = []
         i = 1
-        for im, _, _, originals, corners_big in tqdm(loader):
+        for im, _, masks_trg, originals, corners_big in tqdm(loader):
             # first we predict corners for images with previously trained net
             im = im.to(self.device)
             coords_pred, _ = joint_corner_net(im)
 
-            # recalculation of predicted corners
+            # recalculation of predicted corners to original image system
             coords_pred = torch.reshape(coords_pred, shape=(len(coords_pred), 4, 2))
             corners_big = torch.reshape(corners_big, shape=(len(corners_big), 4, 2))
 
-            big_corners_pred = torch.tensor([[self.rescale_corners(c, im, originals)
-                                              for c in el] for el in coords_pred])
+            big_corners_pred = torch.stack([torch.stack([self.rescale_corner(c, im.shape[-2:], originals.shape[-2:])
+                                              for c in el]) for el in coords_pred])
 
-            # refinement loop
             loss_values_per_sample = []
+            colors = np.array(['red', 'green', 'blue', 'yellow'])
+            active_corner_id = np.argwhere(colors == self.net.net_type)[0][0]
             for j in range(len(im)):
-                try:
-                    # perform initial crop
-                    patches, old_prediction, target_refine_net, \
-                    target_general, offsets = self.initial_crop(originals=torch.stack([originals[j]]),
-                                                                big_corners_pred=torch.stack([big_corners_pred[j]]),
-                                                                corners_big=torch.stack([corners_big[j]]),
-                                                                output_shape=(50, 50),
-                                                                window=200)
-                    p = patches[0].to(self.device)
-                    o_p = old_prediction[0]
-                    n_p = self.net(p)
-                    t_r_n = target_refine_net[0]
-                    changes = {}
+                mask = self.numpy(masks_trg[j])
+                # perform initial crop
+                p, mask_t, changes = self.crop(original=self.numpy(originals[j]),
+                                               old_prediction=self.numpy(big_corners_pred[j][active_corner_id]),
+                                               changes={},
+                                               mask=mask)
 
-                    changes[f"{0:02d} offset"] = torch.tensor(offsets[0][0])
-                    changes[f"{1:02d} rescale"] = {"to": offsets[0][1][1], "from": offsets[0][1][0]}
-                    changes[f"{2:02d} prediction"] = torch.clone(n_p.detach())
-                    if optimize:
-                        l_corner = criterion(n_p.float(), t_r_n.float()).float()
-                        optimizer.zero_grad()
-                        l_corner.backward()
-                        optimizer.step()
-                    else:
-                        n_p, changes = self.refine_loop(changes, n_p, o_p, t_r_n, p)
+                sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=False)
+                p = torch.tensor(p).to(self.device)
+                mask_t = torch.tensor(mask_t).to(self.device)
 
-                    # when no more cropping happens I retrack the most current prediction to the original size and calculate loss
-                    sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=True)
-                    pred_point = torch.clone(n_p.detach())
-                    pred_point = self.untracking_changes(sorted_changes, pred_point)
-                    loss_values_per_sample.append(criterion(pred_point, target_general[0]).item())
-                except:
-                    print("exception", "batch", i, ', image', j)
-                    continue
+                # translate previous prediction and target to patch system of coordinates
+                o_p_big = big_corners_pred[j][active_corner_id]
+                o_p_for_net = self.apply_changes(o_p_big, sorted_changes)
+
+                # predict
+                o_p_for_net = o_p_for_net/p.shape[-1]  # relative
+                # radial_mask = self.radial_mask(p.shape[-2:], self.numpy(o_p_for_net))  # radial mask
+                n_p, mask_p = self.net((p, o_p_for_net))
+
+                #network predicts relative coordinate on a patch, i translate it to system
+                n_p_on_patch = n_p * p.shape[-2]
+
+                # translate new prediction to original system of coordinates
+                sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=True)
+                n_p_big = self.untrack_changes(n_p_on_patch, sorted_changes)
+
+                if optimize:
+                    n_p_big, _ = self.refine_loop(n_p_big=n_p_big,
+                                                  o_p_big=o_p_big,
+                                                  target=corners_big[j][active_corner_id],
+                                                  optimizer=optimizer,
+                                                  optimize=optimize,
+                                                  criterion=criterion,
+                                                  criterion2=criterion2,
+                                                  changes=changes,
+                                                  patch=p,
+                                                  mask_t=mask_t,
+                                                  mask_p=mask_p)
+                else:
+                    n_p_big, _ = self.refine_loop(n_p_big=n_p_big,
+                                                  o_p_big=o_p_big,
+                                                  target=corners_big[j][active_corner_id],
+                                                  changes=changes,
+                                                  patch=p)
+
+                # loss_values_per_sample.append(criterion(pred_point, target_general[0]).item())
+                loss_values_per_sample.append((sum((n_p_big.cpu() - corners_big[j][active_corner_id]) ** 2)**0.5).item())
 
             loss_values.append(np.mean(loss_values_per_sample))
             self.writer.add_scalars("Current_epoch_progress",
@@ -120,161 +137,151 @@ class TrainRefine(Train):
             self.writer.flush()
             i += 1
 
+        print()
+        print("Stats:")
+        print("min\t", min(loss_values))
+        print("max\t", max(loss_values))
+        print("quantiles", np.quantile(loss_values, [.25,.5,.75]))
+        print()
         return loss_values
 
-    def untracking_changes(self, sorted_changes, point):
+    def radial_mask(self, size, center):
+        arr = np.zeros(size, dtype=np.uint8)
+        imgsize = arr.shape[:2]
+        innerColor = 255
+        outerColor = 0
+        for y in range(imgsize[0]):
+            for x in range(imgsize[1]):
+                # Find the distance to the center
+                distanceToCenter = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
+                # Make it on a scale from 0 to 1innerColor
+                distanceToCenter = distanceToCenter / size[0]
+                # Calculate r, g, and b values
+                r = outerColor * distanceToCenter + innerColor * (1 - distanceToCenter)
+                arr[y, x] = r
+
+        return arr
+
+    def refine_loop_step(self, n_p_big, o_p_big, count, p, changes):
+        alpha = 0.2
+        o_p_big_weighted = n_p_big*alpha + o_p_big*(1-alpha)
+        sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=False)
+        o_p_on_patch = self.apply_changes(o_p_big_weighted, sorted_changes)
+
+        # predict
+        o_p_for_net = o_p_on_patch / p.shape[-1]  # relative
+        # radial_mask = self.radial_mask(p.shape[-2:], self.numpy(o_p_on_patch))  # radial mask
+        n_p, mask_p = self.net((p, o_p_for_net))
+
+        # network predicts relative coordinate on a patch, I translate it to system
+        n_p_on_patch = n_p * p.shape[-2]
+
+        # f, a = plt.subplots(1, 2)
+        # a, a1 = a
+        # temp = np.zeros((self.numpy(p).shape[1], self.numpy(p).shape[1], 3))
+        # temp[:, :, 0] = self.numpy(p)[0]
+        # temp[:, :, 1] = self.numpy(p)[1]
+        # temp[:, :, 2] = self.numpy(p)[2]
+        # a.imshow(temp)
+        # a.scatter(self.numpy(o_p_on_patch)[0], self.numpy(o_p_on_patch)[1], s=50, marker="X", c="y", label="OLD")
+        # a.scatter(self.numpy(n_p_on_patch)[0], self.numpy(n_p_on_patch)[1], s=50, marker="o", c="r", label="NEW")
+        # a.legend()
+        # a1.imshow(self.numpy(mask_p[0]))
+        # f.savefig(f"patch_{count}")
+        # plt.close()
+
+        # translate new prediction to original system of coordinates
+        sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=True)
+        n_p_big = self.untrack_changes(n_p_on_patch, sorted_changes)
+
+        return n_p_big, o_p_big_weighted, mask_p
+
+    def refine_loop(self, n_p_big, o_p_big, target, changes, patch, mask_t=None, mask_p=None,
+                    optimizer=None, optimize=False, criterion=None, criterion2=None):
+
+        track = []
+        track_mask = []
+        count = 0
+        condition1 = sum((n_p_big - o_p_big.to(self.device)) ** 2)**0.5
+        condition2 = count < 1 if optimize else True
+
+        while condition1 and condition2:
+            if optimize:
+                loss = criterion(n_p_big, target.to(self.device))
+                loss_mask = criterion2(torch.flatten(mask_p[0]), torch.flatten(mask_t).to(torch.long))
+                optimizer.zero_grad()
+                (loss+loss_mask).backward()
+                optimizer.step()
+            n_p_big, o_p_big, mask_p = self.refine_loop_step(n_p_big=n_p_big,
+                                                             o_p_big=o_p_big,
+                                                             count=count,
+                                                             changes=changes,
+                                                             p=patch)
+
+
+            track.append(n_p_big)
+            count += 1
+            condition1 = sum((n_p_big - o_p_big) ** 2) ** 0.5 > 1
+            condition2 = count < 1 if optimize else count < 30
+
+        return n_p_big, track
+
+    def untrack_changes(self, point, sorted_changes):
         for k, v in sorted_changes:
             if "offset" in k:
-                point = point + v.to(self.device)
+                point = point.to(self.device) + torch.tensor(v).to(self.device)
             elif "rescale" in k:
-                point = torch.stack(self.rescale_corners(point,
-                                                         current_image=v["to"],
-                                                         new_image=v["from"]))  # reverse transformation
+                point = self.rescale_corner(point, from_shape=v["to"], to_shape=v["from"])
         return point
 
+    def apply_changes(self, point, sorted_changes):
+        for k, v in sorted_changes:
+            if "offset" in k:
+                point = torch.tensor(point).to(self.device) - torch.tensor(v).to(self.device)
+            elif "rescale" in k:
+                point = self.rescale_corner(point, from_shape=v["from"], to_shape=v["to"])
+        return point
+
+    def crop(self, original, old_prediction, changes, mask, window=200, p_size=(32, 32), additional_offset=(0, 0)):
+        x_start = 0 if old_prediction[0] - window < 0 else old_prediction[0] - window
+        x_start = x_start+additional_offset[0] if x_start+additional_offset[0]>0 else 0
+        y_start = 0 if old_prediction[1] - window < 0 else old_prediction[1] - window
+        y_start = y_start+additional_offset[1] if y_start+additional_offset[1]>0 else 0
+        x_end = original.shape[-2] if old_prediction[0] + window > original.shape[-2] else old_prediction[0] + window
+        x_end = x_end+additional_offset[0] if x_end+additional_offset[0]<original.shape[-2] else original.shape[-2]
+        y_end = original.shape[-2] if old_prediction[1] + window > original.shape[-2] else old_prediction[1] + window
+        y_end = y_end+additional_offset[1] if y_end+additional_offset[1]<original.shape[-2] else original.shape[-2]
+
+        x_start, x_end, y_start, y_end = int(x_start), int(x_end), int(y_start), int(y_end)
+
+        patch = original[:, y_start:y_end, x_start:x_end]
+        patch_small = np.array([cv2.resize(ch, p_size, interpolation=cv2.INTER_AREA) for ch in patch])
+
+        mask_patch = mask[y_start:y_end, x_start:x_end]
+        mask_patch = cv2.resize(mask_patch, p_size, interpolation=cv2.INTER_AREA)
+
+        changes[f"{0:02d} offset"] = [x_start, y_start]
+        changes[f"{1:02d} rescale"] = {"to": p_size, "from": patch.shape[-2:]}
+
+        return patch_small, mask_patch, changes
+
+    def rescale_corner(self, corner, from_shape, to_shape):
+        corner = corner/from_shape[0]
+        corner = corner*to_shape[0]
+        return corner
+
+    def numpy(self, tensor):
+        return tensor.detach().cpu().numpy()
+
+    def item(self, tensor):
+        return tensor.detach().cpu().item()
+
     def set_JCD(self):
-        state_dict = torch.load(os.path.join("progress_tracking", "detection", "corners_nn",
-                                             "models", "run_80_1",
-                                             "corners_nn_on_ep17_new_best_model_32.0.pt"),
-                                map_location=torch.device('cpu'))
-        joint_corner_net = CornerDetector(compute_attention=True)
-        joint_corner_net.load_state_dict(state_dict)
-        joint_corner_net = joint_corner_net.to(self.device)
-        return joint_corner_net
-
-    def rescale_corners(self, corners, current_image, new_image):
-        # dims [y, x]
-        current_dims = current_image.shape[-2:]
-        new_dims = new_image.shape[-2:]
-        relative_corners = [corners[0] / current_dims[1], corners[1] / current_dims[0]]
-        scaled_corners = [relative_corners[0] * new_dims[1], relative_corners[1] * new_dims[0]]
-        return scaled_corners
-
-    def refine_loop(self, changes, n_p, o_p, t_r_n, p):
-        count = 3
-        condition1 = sum((n_p - o_p) ** 2) > 1
-        # condition2 = (count / 3) <= 10 if optimize else (count / 3) <= 300
-        condition2 = (count / 3) <= 15
-        while condition1 and condition2:
-            # if optimize: self.net.train()
-            # else: self.net.eval()
-            # l_corner = criterion(n_p.float(), t_r_n.float()).float()
-            # if optimize:
-            #     optimizer.zero_grad()
-            #     l_corner.backward()
-            #     optimizer.step()
-
-            for i in range(len(n_p)):
-                if n_p[i] < 0: n_p[i] = torch.tensor(1)
-                if n_p[i] > (p.shape[-1] - 1): n_p[i] = torch.tensor(p.shape[-1] - 1)
-
-            delta_y = n_p[1] - o_p[1]
-            delta_x = n_p[0] - o_p[0]
-            if delta_x >= 0:
-                x_start = abs(delta_x).item()/1
-                x_end = p.shape[-1]
-            else:
-                x_start = 0
-                x_end = (p.shape[-1] - abs(delta_x)/1).item()
-            if delta_y >= 0:
-                y_start = abs(delta_y).item()/1
-                y_end = p.shape[-2]
-            else:
-                y_start = 0
-                y_end = (p.shape[-2] - abs(delta_y)/1).item()
-
-            patch_cropped = p[:, int(y_start):int(y_end), int(x_start):int(x_end)].detach().to("cpu").numpy()[0]
-
-            t_r_n = t_r_n - torch.tensor([x_start, y_start]).to(self.device)
-            changes[f"{count:02d} offset"] = torch.tensor([x_start, y_start])
-            n_p = n_p - torch.tensor([x_start, y_start]).to(self.device)
-            patch_cropped_resized = cv2.resize(patch_cropped[0], dsize=(50, 50), interpolation=cv2.INTER_AREA)
-            t_r_n = torch.stack(self.rescale_corners(t_r_n,
-                                                     current_image=patch_cropped,
-                                                     new_image=patch_cropped_resized))
-            changes[f"{(count + 1):02d} rescale"] = {"to": patch_cropped_resized, "from": patch_cropped}
-            n_p = torch.stack(self.rescale_corners(n_p,
-                                                   current_image=patch_cropped,
-                                                   new_image=patch_cropped_resized))
-            patch_cropped_resized = torch.tensor([patch_cropped_resized]).to(self.device)
-
-            o_p = torch.clone(n_p.detach())
-
-            n_p = self.net(patch_cropped_resized)
-
-            # fig, ax = plt.subplots(1, 1)
-            # ax.imshow(patch_cropped_resized[0].detach().to("cpu").numpy(), cmap="binary_r")
-            # ax.scatter(t_r_n[0].detach().to("cpu").numpy(), t_r_n[1].detach().to("cpu").numpy(), marker="^", c="green")
-            # ax.scatter(n_p[0].detach().to("cpu").numpy(), n_p[1].detach().to("cpu").numpy(), marker="o", c="red")
-            # ax.scatter(o_p[0].detach().to("cpu").numpy(), o_p[1].detach().to("cpu").numpy(), marker="o", c="yellow")
-            # fig.savefig(f"chain_temp{count:02d}.png")
-            # plt.close()
-
-            p = torch.clone(patch_cropped_resized.detach())
-            changes[f"{(count + 2):02d} prediction"] = torch.clone(n_p.detach())
-            count += 3
-
-            condition1 = sum((n_p - o_p) ** 2) > 1
-            # condition2 = (count / 3) <= 10 if optimize else (count / 3) <= 300
-            condition2 = (count / 3) <= 15
-
-        return n_p, changes
-
-    def initial_crop(self, originals: torch.Tensor, big_corners_pred: torch.Tensor,
-                     corners_big: torch.Tensor, output_shape=(50, 50), window=70):
-
-        colors = np.array(['red', 'green', 'blue', 'yellow'])
-        active_corner_id = np.argwhere(colors == self.net.net_type)[0][0]
-
-        patches = []
-        current_prediction = []
-        target_refine_net = []
-        target_general = []
-        offsets = []
-
-        temp_count = 0
-        for el, c_p_on_image, c_t_on_image in zip(originals, big_corners_pred, corners_big):
-            c_p_on_image = c_p_on_image[active_corner_id]
-            c_t_on_image = c_t_on_image[active_corner_id]
-
-            # form the patch
-            y_start = (c_p_on_image[1] - window).to(torch.int) if c_p_on_image[1] - window >= 0 else 0
-            y_end = (c_p_on_image[1] + window).to(torch.int) if c_p_on_image[1] + window < originals.shape[-1] else -1
-            x_start = (c_p_on_image[0] - window).to(torch.int) if c_p_on_image[0] - window >= 0 else 0
-            x_end = (c_p_on_image[0] + window).to(torch.int) if c_p_on_image[0] + window < originals.shape[-1] else -1
-            p = el[0,
-                   y_start:y_end,
-                   x_start:x_end]
-            # rescale patch
-            p_small = cv2.resize(p.detach().to("cpu").numpy(), dsize=output_shape, interpolation=cv2.INTER_AREA)
-            # define coordinates of target and predicted corner on the patch
-            c_p_on_patch = c_p_on_image - torch.tensor([x_start, y_start])
-            c_t_on_patch = c_t_on_image - torch.tensor([x_start, y_start])
-
-            # rescale corners
-            c_p_on_patch_small = self.rescale_corners(c_p_on_patch, p, p_small)
-            c_t_on_patch_small = self.rescale_corners(c_t_on_patch, p, p_small)
-
-            patches.append(torch.tensor([p_small]))
-            current_prediction.append(torch.tensor(c_p_on_patch_small))
-            target_refine_net.append(torch.tensor(c_t_on_patch_small))
-            target_general.append(torch.tensor(c_t_on_image))
-            offsets.append([[x_start, y_start], [np.zeros(p.shape), np.zeros(p_small.shape)]])
-
-            # fig, ax = plt.subplots(1, 1)
-            # ax.imshow(p_small, cmap="binary_r")
-            # ax.scatter(c_t_on_patch_small[0].detach().to("cpu").numpy(), c_t_on_patch_small[1].detach().to("cpu").numpy(), marker="^", c="green")
-            # ax.scatter(c_p_on_patch_small[0].detach().to("cpu").numpy(), c_p_on_patch_small[1].detach().to("cpu").numpy(), marker="o", c="red")
-            # fig.savefig(f"init_crop_temp{temp_count:02d}.png")
-            # temp_count += 1
-            # plt.close()
-
-        patches = torch.stack(patches).to(self.device)
-        current_prediction = torch.stack(current_prediction).to(self.device)
-        target_refine_net = torch.stack(target_refine_net).to(self.device)
-        target_general = torch.stack(target_general).to(self.device)
-
-        return patches, current_prediction, target_refine_net, target_general, offsets
+        repo = Path(os.getcwd())
+        jcd = CornerDetector(compute_attention=True).to('cuda')
+        jcd.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
+                                                    "run_80_1", 'corners_nn_on_ep17_new_best_model_32.0.pt')))
+        return jcd
 
     def evaluate(self, method, loader: DataLoader, device: str,
                  naming: str, path: str, num=2):
@@ -283,52 +290,56 @@ class TrainRefine(Train):
         allimages, fourcorners, singlepredictions = [], [], []
         count = 0
         for i, b in enumerate(loader):
-            images, corners_targets, _, originals, corners_big = b
-            images = images.to(self.device)
-            predictions, _ = joint_corner_net(images)
-            predictions = torch.reshape(predictions, shape=(len(predictions), 4, 2))
+            im = b[0]
+            _, masks_trg, originals, corners_big = b[1:]
+            # first we predict corners for images with previously trained net
+            im = im.to(self.device)
+            coords_pred, _ = joint_corner_net(im)
+
+            # recalculation of predicted corners to original image system
+            coords_pred = torch.reshape(coords_pred, shape=(len(coords_pred), 4, 2))
             corners_big = torch.reshape(corners_big, shape=(len(corners_big), 4, 2))
-            for j in range(len(images)):
-                if count == num: break
-                image = images[j]
-                corners_pred = predictions[j]
-                original = originals[j]
-                big_corners_pred = torch.tensor([self.rescale_corners(c, image, original) for c in corners_pred])
-                corner_big = corners_big[j]
 
-                patches, old_prediction, target_refine_net, \
-                target_general, offsets = self.initial_crop(originals=torch.stack([original]),
-                                                            big_corners_pred=torch.stack([big_corners_pred]),
-                                                            corners_big=torch.stack([corner_big]),
-                                                            output_shape=(50, 50))
+            big_corners_pred = torch.stack([torch.stack([self.rescale_corner(c, im.shape[-2:], originals.shape[-2:])
+                                                         for c in el]) for el in coords_pred])
 
-                p, o_p, t_r_n, target_general, offsets = patches[0], old_prediction[0], target_refine_net[0], target_general[0], offsets[0]
-                n_p = self.net(p)
-                changes = {}
+            colors = np.array(['red', 'green', 'blue', 'yellow'])
+            active_corner_id = np.argwhere(colors == self.net.net_type)[0][0]
+            for j in range(len(im)):
+                mask = self.numpy(masks_trg[j])
+                # perform initial crop
+                p, _, changes = self.crop(original=self.numpy(originals[j]),
+                                       old_prediction=self.numpy(big_corners_pred[j][active_corner_id]),
+                                       changes={},
+                                       mask=mask)
 
-                changes[f"{0:02d} offset"] = torch.tensor(offsets[0])
-                changes[f"{1:02d} rescale"] = {"to": offsets[1][1], "from": offsets[1][0]}
-                changes[f"{2:02d} prediction"] = torch.clone(n_p.detach())
+                sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=False)
+                p = torch.tensor(p).to(self.device)
 
-                try:
-                    n_p, changes = self.refine_loop(changes, n_p, o_p, t_r_n, p)
-                except:
-                    print("Loop failed")
-                    pass
+                # translate previous prediction and target to patch system of coordinates
+                o_p_big = big_corners_pred[j][active_corner_id]
+                o_p_for_net = self.apply_changes(o_p_big, sorted_changes)
+
+                # predict
+                o_p_for_net = o_p_for_net / p.shape[-1]  # relative
+                # radial_mask = self.radial_mask(p.shape[-2:], self.numpy(o_p_for_net))  # radial mask
+                n_p, mask_pred = self.net((p, o_p_for_net))
+
+                # network predicts relative coordinate on a patch, I translate it to system
+                n_p_on_patch = n_p * p.shape[-2]
+
+                # translate new prediction to original system of coordinates
                 sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=True)
-                sorted_keys = np.array([el[0] for el in sorted_changes])
-                intermediate_predictions = {k:v for k, v in changes.items() if "prediction" in k}
-                prediction_chain = []
-                for k, pred_point in intermediate_predictions.items():
-                    # perform all transformations before this prediction
-                    position = np.argwhere(sorted_keys == k)[0][0]
-                    pred_point = self.untracking_changes(sorted_changes[position:], pred_point)
-                    prediction_chain.append(pred_point)
+                n_p_big = self.untrack_changes(n_p_on_patch, sorted_changes)
 
-                allimages.append(original)
-                fourcorners.append((corner_big, big_corners_pred))
-                singlepredictions.append(prediction_chain)
-
+                _, track = self.refine_loop(n_p_big=n_p_big,
+                                            o_p_big=o_p_big,
+                                            target=corners_big[j][active_corner_id],
+                                            changes=changes,
+                                            patch=p)
+                allimages.append(originals[j])
+                fourcorners.append((corners_big[j], big_corners_pred[j]))
+                singlepredictions.append(track)
 
                 count += 1
                 if count == num: break
@@ -343,18 +354,24 @@ class TrainRefine(Train):
         """
         for i, im, four, pred in zip(range(len(images)), images, fourcorners, singlepredictions):
             pred = [el.detach().to("cpu").numpy() for el in pred]
-            im = im[0].reshape(im.shape[-2], im.shape[-1])
+
+            temp = np.zeros((im.shape[1], im.shape[1], 3))
+            temp[:, :, 0] = im[0]
+            temp[:, :, 1] = im[1]
+            temp[:, :, 2] = im[2]
+            im = np.array(temp)
             corners_trg, corners_pred = four
+            corners_trg, corners_pred = self.numpy(corners_trg), self.numpy(corners_pred)
 
             fig, ax = plt.subplots(1, 2, figsize=(20 * 2, 20 + 3))
-            ax[0].imshow(im, cmap="binary_r")
+            ax[0].imshow(im)
 
             colors = ['red', 'green', 'blue', 'yellow']
 
             # bring to tuples
 
-            corners_pred[(corners_pred < 0).argwhere()] = 0
-            corners_pred[(corners_pred > 2000).argwhere()] = 2000
+            corners_pred[np.argwhere(corners_pred < 0)] = 0
+            corners_pred[np.argwhere(corners_pred > im.shape[-2])] = im.shape[-2]
 
             for c, col in zip(corners_trg, colors): ax[0].scatter(c[0], c[1], c=col, s=500, marker='o')
             for j, col in zip(range(4), colors):
@@ -370,7 +387,7 @@ class TrainRefine(Train):
 
 
             active_corner_id = np.argwhere(np.array(colors)==self.net.net_type)[0][0]
-            ax[1].imshow(im, cmap="binary_r")
+            ax[1].imshow(im)
             ax[1].scatter(corners_trg[active_corner_id][0],
                           corners_trg[active_corner_id][1],
                           c=colors[active_corner_id],

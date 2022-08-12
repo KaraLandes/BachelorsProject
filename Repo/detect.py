@@ -9,9 +9,9 @@ from torch.optim import Adam
 # This file is created to prepare and preprocess all  data
 # HYPERPARAMETERS, WHICH CODE TO RUN
 DUMMY = 0  # detect bills on images
-FASTRCNN = 0
-JOINT_CORNERS_DETECTOR = 1
-CORNERS_REFINEMENT = 1
+FASTRCNN = 1
+JOINT_CORNERS_DETECTOR = 0
+CORNERS_REFINEMENT = 0
 
 repo = Path(os.getcwd())
 # repo = repo.parent.absolute()
@@ -65,7 +65,7 @@ if FASTRCNN:
                              network=network)
     train_class.set_datasets(train_dataset_type=FRCNNBillOnBackGroundSet,
                              valid_dataset_type=FRCNNRealBillSet, coefficient=1,
-                             output_shape=(128, 128))
+                             output_shape=(80, 80))
     train_class.set_writer(
         log_dir=os.path.join(repo, "progress_tracking", "detection/faster_rcnn", "tensorboard"))
     train_class.set_loaders(batch_size=2)
@@ -73,7 +73,7 @@ if FASTRCNN:
     save_model_path = os.path.join(repo, "progress_tracking", "detection/faster_rcnn", "models", "faster_rcnn_")
     save_images_path = os.path.join(repo, "progress_tracking", "detection/faster_rcnn", "visualization")
 
-    train_class.train(optimizer=Adam(network.parameters(), lr=5e-4, weight_decay=5e-5),
+    train_class.train(optimizer=Adam(network.parameters(), lr=1e-5, weight_decay=5e-5),
                       save_model_path=save_model_path, epochs=100, method=train_class.depict,
                       save_images_path=save_images_path)
 if JOINT_CORNERS_DETECTOR:
@@ -102,12 +102,11 @@ if JOINT_CORNERS_DETECTOR:
 
     network.vgg16_enc.requires_grad_(False)
     params = [p for p in network.parameters() if p.requires_grad == True]
-    opt = Adam(params, lr=1e-4, weight_decay=5e-1)
+    opt = Adam(params, lr=1e-4, weight_decay=5e-5)
 
     train_class.train(optimizer=opt,
                       save_model_path=save_model_path, epochs=81, method=train_class.depict_corners,
                       save_images_path=save_images_path)
-
 if CORNERS_REFINEMENT:
     from detection.refine_nn.dataset import RefineBillOnBackGroundSet, RefineRealBillSet
     from detection.refine_nn.network import RefineNet
@@ -136,7 +135,7 @@ if CORNERS_REFINEMENT:
 
         network.vgg.requires_grad_(False)
         params = [p for p in network.parameters() if p.requires_grad == True]
-        opt = Adam(params, lr=1e-3, weight_decay=5e-6)
+        opt = Adam(params, lr=1e-5, weight_decay=5e-6)
         train_class.train(optimizer=opt,
-                          save_model_path=save_model_path, epochs=40, method=train_class.depict_refinement,
+                          save_model_path=save_model_path, epochs=10, method=train_class.depict_refinement,
                           save_images_path=save_images_path)

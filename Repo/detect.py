@@ -74,7 +74,7 @@ if FASTRCNN:
     save_images_path = os.path.join(repo, "progress_tracking", "detection/faster_rcnn", "visualization")
 
     train_class.train(optimizer=Adam(network.parameters(), lr=1e-5, weight_decay=5e-5),
-                      save_model_path=save_model_path, epochs=100, method=train_class.depict,
+                      save_model_path=save_model_path, epochs=30, method=train_class.depict,
                       save_images_path=save_images_path)
 if JOINT_CORNERS_DETECTOR:
     from detection.corners_nn.dataset import CornerRealBillSet, CornerBillOnBackGroundSet

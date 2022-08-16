@@ -207,10 +207,19 @@ class Train():
                                 pos.width, pos.height * 0.9])
             ax[0].legend(loc='upper center', bbox_to_anchor=(.5, .05), fontsize=10)
             ax[0].axis("off")
-            ax[1].imshow(true_masked)
+            try:
+                ax[1].imshow(true_masked)
+            except:
+                print(true_masked.shape)
+                print()
             ax[1].set_title("Should be Masked", fontsize=30)
             ax[1].axis("off")
-            ax[2].imshow(pred_masked)
+
+            try:
+                ax[2].imshow(pred_masked)
+            except:
+                print(pred_masked.shape)
+                print()
             ax[2].set_title("Masked by model", fontsize=30)
             ax[2].axis("off")
             plt.tight_layout(pad=2)

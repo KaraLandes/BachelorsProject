@@ -101,15 +101,6 @@ class TrainFRCNN(Train):
 
                 prediction = predictions[j]['boxes'].to('cpu').detach().numpy().astype(int)
 
-                # ious = []
-                # if len(prediction) > 0:
-                #     for box in prediction:
-                #         iou = box_iou(torch.unsqueeze(torch.tensor(box), 0), torch.unsqueeze(torch.tensor(target), 0)).flatten()[0]
-                #         ious.append(iou)
-                #     best_box_id = torch.argmax(torch.stack(ious))
-                #     prediction = prediction[best_box_id]
-                # else:
-                #     prediction = np.array([0, 0, 100, 100])
                 if len(prediction) > 0:
                     best_box_id = 0
                     prediction = prediction[best_box_id]

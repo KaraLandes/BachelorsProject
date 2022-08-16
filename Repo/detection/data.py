@@ -200,6 +200,8 @@ class AbstractRealBillSet(Dataset):
         msk = self.masks[idx]
         im = (Image.open(im).convert('RGB'))
         msk = (Image.open(msk).convert('L'))
+        if im.width < 4000 and im.height < 4000:
+            print(im.width, im.height)
         im, trg = self.form_target(im, msk, idx, im_name=self.images[idx])
 
         return im, trg
@@ -216,6 +218,13 @@ class AbstractRealBillSet(Dataset):
 
         dims = output_shape
         image.thumbnail(size=dims, resample=Image.ANTIALIAS)
+
+        mask = np.array(mask)
+        mask[:10, :] = 255
+        mask[-10:, :] = 255
+        mask[:, :10] = 255
+        mask[:, -10:] = 255
+        mask = Image.fromarray(mask)
         mask.thumbnail(size=dims, resample=Image.ANTIALIAS)
 
         rotate_neg = ["real_spar_2_007", "real_spar_2_008", "real_spar_2_009", "real_spar_2_010",
@@ -252,12 +261,6 @@ class AbstractRealBillSet(Dataset):
 
         # finalising target
         # patch
-        mask = np.array(mask)
-        mask[:10, :] = 255
-        mask[-10:, :] = 255
-        mask[:, :10] = 255
-        mask[:, -10:] = 255
-        mask = Image.fromarray(mask)
         mask_b = Image.new(mask.mode, output_shape, (255,))
         mask_b.paste(mask, (0, 0))
 

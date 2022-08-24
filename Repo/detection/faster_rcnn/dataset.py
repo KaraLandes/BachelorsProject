@@ -3,7 +3,7 @@ import torch
 import warnings
 
 warnings.filterwarnings("ignore")
-from PIL import Image
+from PIL import Image, ImageFilter
 from PIL import ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -54,6 +54,8 @@ class FRCNNBillOnBackGroundSet(AbstractBillOnBackGroundSet):
 class FRCNNRealBillSet(AbstractRealBillSet):
     def form_target(self, image: Image, mask: Image, seed: int, im_name: str):
         output_shape = self.output_shape
+        image = image.filter(ImageFilter.UnsharpMask(radius=2, percent=1000))
+
         image, mask = self.preprocess_image(image, mask, output_shape, im_name=im_name, seed=seed)
 
         mask = np.array(mask)
@@ -88,5 +90,6 @@ class FRCNNRealBillSet(AbstractRealBillSet):
         target["iscrowd"] = torch.Tensor([0]).to(torch.int64)
 
         image = np.array(image)
+
         image = np.array([image[:, :, 0], image[:, :, 1], image[:, :, 2]])
         return image, target

@@ -13,8 +13,8 @@ from PIL import Image
 import numpy as np
 import cv2
 
-bills = sorted(glob.glob(os.path.join("processed_data", "realbills", "temp", "**/*.jpg"), recursive=True))
-masks = sorted(glob.glob(os.path.join("processed_data", "realbills", "temp", "**/[m]*.png"), recursive=True))
+bills = sorted(glob.glob(os.path.join("processed_data", "faster_processed_2", "realbills", "unseen", "[r]*.jpg"), recursive=False))
+masks = sorted(glob.glob(os.path.join("processed_data", "faster_processed_2", "realbills", "unseen", "[m]*.jpg"), recursive=False))
 rotate_neg = ["real_spar_2_007", "real_spar_2_008", "real_spar_2_009", "real_spar_2_010",
               "real_spar_2_011", "real_spar_2_012", "real_spar_2_013", "real_spar_2_014",
               "real_spar_2_036", "real_spar_2_037", "real_spar_2_038", "real_spar_2_039",
@@ -61,5 +61,5 @@ for b, m in tqdm(zip(bills, masks)):
     for c in corners: ax[2].scatter(c[0], c[1], c="r", s=50)
     f.suptitle(f"{b[25:-4]}")
 
-    f.savefig(os.path.join("real_bills_results", "chekup", "temp", f"{b.split('/')[-1][:-4]}.png"), dpi=200)
+    f.savefig(os.path.join("real_bills_results", "chekup", "unseen", f"{b.split('/')[-1][:-4]}.png"), dpi=200)
     plt.clf()

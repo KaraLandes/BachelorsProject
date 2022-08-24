@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 from Repo.detection.faster_rcnn.train_evaluate import TrainFRCNN
 from Repo.detection.faster_rcnn.dataset import FRCNNRealBillSet
+from Repo.detection.dummy_cnn.dataset import BaseRealBillSet
 from Repo.detection.faster_rcnn.network import FastRCNN
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -15,15 +16,26 @@ im_dir_gen = os.path.join(repo, "processed_data", "genbills")
 im_dir_real = os.path.join(repo, "processed_data", "realbills")
 im_dir_unseen = os.path.join(repo, "processed_data", "realbills", "unseen")
 
-save_dir = os.path.join(repo, "processed_data", "faster_processed", "realbills")
-save_dir_unseen = os.path.join(repo, "processed_data", "faster_processed", "realbills", "unseen")
+im_dir_real_faster = os.path.join(repo, "processed_data", "faster_processed", "realbills")
+im_dir_unseen_faster = os.path.join(repo, "processed_data", "faster_processed", "realbills", "unseen")
+
+save_dir = os.path.join(repo, "processed_data", "faster_processed_2", "realbills")
+save_dir_unseen = os.path.join(repo, "processed_data", "faster_processed_2", "realbills", "unseen")
+
+UNSEEN = 1
+if UNSEEN:
+    im_dir = im_dir_unseen_faster
+    save_dir = save_dir_unseen
+else:
+    im_dir = im_dir_real_faster
+    save_dir = save_dir
 
 net = FastRCNN()
 net.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/faster_rcnn", 'models',
-                                            "run_80", 'faster_rcnn__on_ep21_new_best_model_23.0.pt')))
+                                            "run_48_crop", "retrain_1", 'faster_rcnn__on_ep4_new_best_model_6.0.pt')))
 
-bills = FRCNNRealBillSet(image_dir=im_dir_real, output_shape=(80, 80), coefficient=1)
-bills_big = FRCNNRealBillSet(image_dir=im_dir_real, output_shape=(4000, 4000), coefficient=1)
+bills = FRCNNRealBillSet(image_dir=im_dir, output_shape=(48, 48), coefficient=1)
+bills_big = BaseRealBillSet(image_dir=im_dir, output_shape=(3000, 3000), coefficient=1)
 
 train_class = TrainFRCNN("", "", "", network=net)
 train_class.set_device()
@@ -49,30 +61,26 @@ for i, b in tqdm(enumerate(loader)):
     pred = pred[0]['boxes'][0].detach().cpu().numpy()
     pred_big = ((pred/im[0].shape[1])*im_big.shape[1]).astype(int)
 
+
     pred_big[1], pred_big[2] = pred_big[2], pred_big[1]
 
     pred_big_w = abs(pred_big[0] - pred_big[1])
     pred_big_h = abs(pred_big[2] - pred_big[3])
-    r_tol = .15
-    w_tolerance = int(pred_big_w * r_tol)
-    h_tolerance = int(pred_big_h * r_tol)
+    r_tol_w, r_tol_h = .22, .22
+    w_tolerance = int(pred_big_w * r_tol_w)
+    h_tolerance = int(pred_big_h * r_tol_h)
     pred_big[0] = 0 if pred_big[0] - w_tolerance < 0 else pred_big[0] - w_tolerance
     pred_big[2] = 0 if pred_big[2] - h_tolerance < 0 else pred_big[2] - h_tolerance
     pred_big[1] = im_big.shape[-2] if pred_big[1] + w_tolerance > im_big.shape[-2] else pred_big[1] + w_tolerance
     pred_big[3] = im_big.shape[-2] if pred_big[3] + h_tolerance > im_big.shape[-2] else pred_big[3] + h_tolerance
 
 
-    cropped_image = im_big[:, pred_big[0]:pred_big[1], pred_big[2]:pred_big[3]]
-    cropped_mask = trg_big["masks"][:, pred_big[0]:pred_big[1], pred_big[2]:pred_big[3]]
-    cropped_mask = cropped_mask.detach().cpu().numpy()
+    cropped_image = im_big[pred_big[0]:pred_big[1], pred_big[2]:pred_big[3], :]
+    cropped_mask = trg_big["masks"][pred_big[0]:pred_big[1], pred_big[2]:pred_big[3]]
 
-    temp_i = np.zeros((cropped_image.shape[-2], cropped_image.shape[-1], 3))
-    temp_i[:, :, 0] = cropped_image[0]
-    temp_i[:, :, 1] = cropped_image[1]
-    temp_i[:, :, 2] = cropped_image[2]
-    temp_i = temp_i.astype(np.uint8)
-    Image.fromarray(temp_i).save(os.path.join(save_dir, f"real_image_{i}.jpg"))
-    Image.fromarray(cropped_mask[0].astype(np.uint8)).save(os.path.join(save_dir, f"mask_real_image_{i}.jpg"))
+    cropped_image = cropped_image.astype(np.uint8)
+    Image.fromarray(cropped_image).save(os.path.join(save_dir, f"real_image_{i:03d}.jpg"))
+    Image.fromarray(cropped_mask.astype(np.uint8)).save(os.path.join(save_dir, f"mask_real_image_{i:03d}.jpg"))
 
 
     #errors tracking
@@ -93,6 +101,14 @@ for i, b in tqdm(enumerate(loader)):
     errors["ymax"][0].append(y_max_diff)
     errors["ymax"][1].append(y_max_diff / pred_h)
 
+
+    # check mask
+    # temp_i = np.zeros((im_big.shape[-2], im_big.shape[-1], 3))
+    # temp_i[:, :, 0] = im_big[0] * trg_big["masks"].detach().cpu().numpy()[0]
+    # temp_i[:, :, 1] = im_big[1] * trg_big["masks"].detach().cpu().numpy()[0]
+    # temp_i[:, :, 2] = im_big[2] * trg_big["masks"].detach().cpu().numpy()[0]
+    # temp_i = temp_i.astype(np.uint8)
+    # Image.fromarray(temp_i).save(os.path.join(save_dir, f"checkup_{i}.jpg"))
 
 for k, v in errors.items():
     print(k)

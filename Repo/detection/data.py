@@ -6,7 +6,7 @@ from numpy import random as rnd
 import warnings
 
 warnings.filterwarnings("ignore")
-from PIL import Image
+from PIL import Image, ImageFilter
 from PIL import ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -84,8 +84,8 @@ class AbstractBillOnBackGroundSet(Dataset):
                                     "textures")
         textures = sorted(glob.glob(os.path.join(textures_dir, "**", "*.jpg"), recursive=True))
         background = np.random.choice(textures, size=1)[0]
-        rnd_width = np.random.randint(image.width, image.width * 2)
-        rnd_height = np.random.randint(image.height, image.height * 2)
+        rnd_width = np.random.randint(image.width, image.width * 1.7)
+        rnd_height = np.random.randint(image.height, image.height * 1.7)
         background = Image.open(background).convert('RGB')
         background = background.transform(size=(rnd_width, rnd_height),
                                           method=Image.EXTENT,
@@ -110,22 +110,34 @@ class AbstractBillOnBackGroundSet(Dataset):
         background[top_pad:top_pad + image.shape[0], left_pad:left_pad + image.shape[1]] = subarray_where_bill_will_be
 
         # 6 add some noise
-        background = background.astype(np.float64)
-        noise_percentage = np.random.randint(1, 20) / 100
-        noise_matrix = np.random.randint(0, 100, size=background.shape) / 100  # noise which I will apply
-        criterion_matrix = np.random.normal(0.5, 0.2, size=background.shape)  # probability that pixel will be changed
-        noise_mask = (criterion_matrix <= noise_percentage).astype(np.uint8)  # masking which pixels will change
-        noise_matrix *= noise_mask  # zeroing pixels which don't change
-        noise_matrix += (1 - noise_mask)  # bring zeros to ones
-        background *= noise_matrix  # apply noise
+        # background = background.astype(np.float64)
+        # noise_percentage = np.random.randint(1, 20) / 100
+        # noise_matrix = np.random.randint(0, 100, size=background.shape) / 100  # noise which I will apply
+        # criterion_matrix = np.random.normal(0.5, 0.2, size=background.shape)  # probability that pixel will be changed
+        # noise_mask = (criterion_matrix <= noise_percentage).astype(np.uint8)  # masking which pixels will change
+        # noise_matrix *= noise_mask  # zeroing pixels which don't change
+        # noise_matrix += (1 - noise_mask)  # bring zeros to ones
+        # background *= noise_matrix  # apply noise
 
         # 7 do the mask as big as background
         mask_big = np.zeros(shape=background.shape[:-1])
         mask_big[top_pad:top_pad + image.shape[0], left_pad:left_pad + image.shape[1]] = mask
         mask = mask_big
 
-        # 8 unifying size
+        # 8 make white gray-noisy
+        whiteness = np.random.randint(200, 250, background.shape)
+        background[(background[:, :, 0] > 200) &
+                   (background[:, :, 1] > 200) &
+                   (background[:, :, 2] > 200) &
+                   (mask > 200)] = whiteness[(background[:, :, 0] > 200) &
+                                             (background[:, :, 1] > 200) &
+                                             (background[:, :, 2] > 200) &
+                                             (mask > 200)]
+        # 9 blur, to kill edges
         image = Image.fromarray(background.astype(np.uint8))
+        image = image.filter(ImageFilter.GaussianBlur(5))
+
+        # 10 unifying size
         mask = Image.fromarray(mask)
         dims = output_shape
         image.thumbnail(size=dims, resample=Image.ANTIALIAS)
@@ -184,10 +196,12 @@ class AbstractRealBillSet(Dataset):
         @:param images_dir: String path to directory where bills and masks are held
         :type output_shape: object
         """
-        self.images = sorted(glob.glob(os.path.join(image_dir, "*.jpg"), recursive=False))
+        self.images = sorted(glob.glob(os.path.join(image_dir, "[r]*.jpg"), recursive=False))
         self.images = self.images*coefficient
         # self.images = self.images[:8]
-        self.masks = sorted(glob.glob(os.path.join(image_dir, "[m]*.png"), recursive=False))
+        types = [".png", ".jpg"]
+        self.masks = [sorted(glob.glob(os.path.join(image_dir, "[m]*"+t), recursive=False)) for t in types]
+        self.masks = self.masks[0]+self.masks[1]
         self.masks = self.masks*coefficient
         # self.masks = self.masks[:8]
         self.output_shape = output_shape
@@ -200,8 +214,18 @@ class AbstractRealBillSet(Dataset):
         msk = self.masks[idx]
         im = (Image.open(im).convert('RGB'))
         msk = (Image.open(msk).convert('L'))
-        if im.width < 4000 and im.height < 4000:
-            print(im.width, im.height)
+        if im.width < self.output_shape[0] and im.height < self.output_shape[1]:
+            # enlarge image
+            if im.width >= im.height:
+                w_to_h = im.width/im.height
+                wh = (self.output_shape[0], int(self.output_shape[0]/w_to_h))
+                im = im.resize(wh, Image.EXTENT)
+                msk = msk.resize(wh, Image.EXTENT)
+            else:
+                h_to_w = im.height / im.width
+                wh = (int(self.output_shape[1] / h_to_w), self.output_shape[1])
+                im = im.resize(wh, Image.EXTENT)
+                msk = msk.resize(wh, Image.EXTENT)
         im, trg = self.form_target(im, msk, idx, im_name=self.images[idx])
 
         return im, trg
@@ -216,8 +240,10 @@ class AbstractRealBillSet(Dataset):
             @:param output_shape: tuple specifying collation field shape
             @:return tuple: with image, coordinates of bbox and degree of rotation"""
 
+
         dims = output_shape
         image.thumbnail(size=dims, resample=Image.ANTIALIAS)
+
 
         mask = np.array(mask)
         mask[:10, :] = 255
@@ -235,10 +261,11 @@ class AbstractRealBillSet(Dataset):
                       "real_spar_3_040", "real_spar_3_041", "real_spar_3_042", "real_spar_4_002",
                       "real_spar_4_003", "real_spar_4_004"]
 
+
         im_name = im_name.split("/")[-1][:-4]
-        if mask.width != image.width and np.isin(im_name, rotate_neg):
+        if abs(mask.width - image.width) > 1 and np.isin(im_name, rotate_neg):
             mask = mask.rotate(-90, expand=True)
-        elif mask.width != image.width:
+        elif abs(mask.width - image.width) > 1:
             mask = mask.rotate(90, expand=True)
         elif np.isin(im_name, rotate_neg):
             mask = mask.rotate(180, expand=True)
@@ -268,10 +295,12 @@ class AbstractRealBillSet(Dataset):
 
     def calculate_corners(self, mask):
         corners = cv2.goodFeaturesToTrack(mask, 4, 0.01, 5)
-        corners = np.reshape(corners, (4, 2))
+        corners = np.reshape(corners, (len(corners), 2))
+        while len(corners) < 4:
+            corners = np.concatenate((corners, [[0, 0]]))
         if len(corners) != 4:
-            np.append(corners, [0, 0])
-            np.append(corners, [0, 0])
+            print()
+            pass
 
         corners_ordered = []
         temp = [c[0] + c[1] for c in corners]
@@ -296,4 +325,5 @@ class AbstractRealBillSet(Dataset):
 
             corners_ordered.append(idx)
         corners = [corners[j] for j in corners_ordered]
+
         return corners

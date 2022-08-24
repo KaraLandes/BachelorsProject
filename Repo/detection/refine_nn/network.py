@@ -30,14 +30,14 @@ class RefineNet(nn.Module):
         self.vgg = VGGEncoder()
 
         self.deconv = []
-        self.deconv.append(nn.ConvTranspose2d(128, 32, kernel_size=5, stride=1))
-        self.deconv.append(nn.ConvTranspose2d(32, 32, kernel_size=5, stride=1))
-        self.deconv.append(nn.ConvTranspose2d(32, 32, kernel_size=5, stride=1))
-        self.deconv.append(nn.ConvTranspose2d(32, 2, kernel_size=5, stride=1))
+        self.deconv.append(nn.ConvTranspose2d(128, 32, kernel_size=7, stride=1))
+        self.deconv.append(nn.ConvTranspose2d(32, 32, kernel_size=7, stride=1))
+        self.deconv.append(nn.ConvTranspose2d(32, 32, kernel_size=7, stride=1))
+        self.deconv.append(nn.ConvTranspose2d(32, 2, kernel_size=7, stride=1))
         self.deconv = nn.Sequential(*self.deconv)
 
         self.fnn = []
-        self.fnn.append(nn.Linear(2 + 2 * 32 * 32, 256))
+        self.fnn.append(nn.Linear(2 + 2 * 48 * 48, 256))
         self.fnn.append(nn.Linear(256, 128))
         self.fnn.append(nn.Linear(128, 2))
         self.fnn = nn.Sequential(*self.fnn)

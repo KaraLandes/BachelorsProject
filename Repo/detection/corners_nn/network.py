@@ -68,7 +68,8 @@ class AttentionMask(nn.Module):
                                      kernel_size=(1, 1), stride=(1, 1),
                                      dilation=(3, 3)))
 
-        # operations for dimesnsionalyti compliance
+
+        # operations for dimensionality compliance
         # self.dim_a = nn.Conv2d(in_channels=int(out*4), out_channels=int(out*4/2),
         #                        kernel_size=(1, 1), stride=(2, 2))
         self.dim_c = nn.ConvTranspose2d(in_channels=int(out * 4), out_channels=int(out * 4 / 2),
@@ -138,7 +139,7 @@ class CornerDetector(nn.Module):
         if compute_attention: self.attention = AttentionMask()
 
         self.fnns = []
-        self.fnns.append(torch.nn.Linear(64 * 20 * 20, 256))
+        self.fnns.append(torch.nn.Linear(64 * 12 * 12, 256))
         self.fnns.append(torch.nn.ReLU())
         self.fnns.append(torch.nn.Linear(256, 64))
         self.fnns.append(torch.nn.ReLU())

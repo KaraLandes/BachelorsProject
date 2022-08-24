@@ -25,10 +25,15 @@ repo = Path(os.getcwd())
 if DETECT_CORNERS:
     net = CornerDetector(compute_attention=True).to('cuda')
     net.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
-                                                "run_80_1", 'corners_nn_on_ep17_new_best_model_32.0.pt')))
+                                                "run_80_crop_1", "retrain_1",
+                                                'corners_nn_on_ep7_new_best_model_26.0.pt')))
 
-    bills = CornerRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(80, 80), coefficient=1)
-    bills_big = CornerRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(1000, 1000), coefficient=1)
+    bills = CornerRealBillSet(image_dir=os.path.join(repo, "processed_data", "faster_processed_2", "realbills",
+                                                     "unseen"),
+                              output_shape=(80, 80), coefficient=1)
+    bills_big = CornerRealBillSet(image_dir=os.path.join(repo, "processed_data", "faster_processed_2", "realbills",
+                                                         "unseen"),
+                                  output_shape=(1000, 1000), coefficient=1)
     train_class = TrainCorner("", "", "", network=net)
 
     loader = DataLoader(dataset=bills, batch_size=1, num_workers=1, collate_fn=train_class.collate_fn, shuffle=False)
@@ -66,7 +71,11 @@ if DETECT_CORNERS:
                                [corner_trg[4], corner_trg[5]], [corner_trg[6], corner_trg[7]]])
 
         fig, ax = plt.subplots(1, 1, figsize=(24, 24))
-        ax.imshow(image, cmap="binary_r")
+        temp = np.zeros((image.shape[1], image.shape[1], 3))
+        temp[:, :, 0] = image[0]
+        temp[:, :, 1] = image[1]
+        temp[:, :, 2] = image[2]
+        ax.imshow(temp.astype(int))
         colors = ['red', 'green', 'blue', 'yellow']
         for c, col in zip(corner_trg_big, colors): ax.scatter(c[0], c[1], c=col, s=1000, marker='o')
         for j, col in zip(range(4), colors):
@@ -83,7 +92,7 @@ if DETECT_CORNERS:
         ax.axis("off")
         plt.tight_layout(pad=2)
 
-        # fig.savefig(os.path.join("real_bills_results", 'detection', "corners", f"{num}.png"), dpi=50)
+        fig.savefig(os.path.join("real_bills_results", 'detection', "corners", f"{num}.png"), dpi=50)
         num += 1
         plt.close('all')
         plt.cla()
@@ -101,16 +110,19 @@ if DETECT_CORNERS:
     f = plt.figure()
     plt.boxplot(distances_big)
     plt.ylim((0, 300))
-    f.savefig(os.path.join("real_bills_results", 'detection', "corners", f"big_dist_80_e17_unseen.png"), dpi=50)
+    f.savefig(os.path.join("real_bills_results", 'detection', "corners", f"big_dist_80_crop_retrain_unseen.png"),
+              dpi=100)
 
 if DETECT_REFINE:
     jcd = CornerDetector(compute_attention=True).to('cuda')
     jcd.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
-                                                "run_80_1", 'corners_nn_on_ep17_new_best_model_32.0.pt')))
+                                                "run_48_crop", "retrain_2",
+                                                'corners_nn_on_ep27_new_best_model_10.0.pt')))
 
 
     crn = RefineNet(net_type="red")#dummy instance
-    bills = RefineRealBillSet(image_dir=os.path.join(repo, "processed_data", "realbills", "unseen"), output_shape=(80, 80),
+    bills = RefineRealBillSet(image_dir=os.path.join(repo, "processed_data", "faster_processed_2",
+                                                     "realbills", "unseen"), output_shape=(48, 48),
                               coefficient=1)
     num = 1000 # 0 or 1000
     train_class = TrainRefine("", "", "", network=crn)
@@ -118,13 +130,13 @@ if DETECT_REFINE:
     loader = DataLoader(dataset=bills, batch_size=1, num_workers=11, collate_fn=train_class.collate_fn,
                         shuffle=False)
     best_nets = [os.path.join(repo, "progress_tracking", "detection/refine_nn", "red", 'models',
-                              'corners_nn_on_ep8_new_best_model_64.0.pt'),
+                              'corners_nn_on_ep19_new_best_model_68.0.pt'),
                  os.path.join(repo, "progress_tracking", "detection/refine_nn", "green", 'models',
-                              'corners_nn_on_ep6_new_best_model_84.0.pt'),
+                              'corners_nn_on_ep20_new_best_model_73.0.pt'),
                  os.path.join(repo, "progress_tracking", "detection/refine_nn", "blue", 'models',
-                              'corners_nn_on_ep6_new_best_model_69.0.pt'),
+                              'corners_nn_on_ep20_new_best_model_83.0.pt'),
                  os.path.join(repo, "progress_tracking", "detection/refine_nn", "yellow", 'models',
-                              'corners_nn_on_ep7_new_best_model_77.0.pt')
+                              'corners_nn_on_ep20_new_best_model_64.0.pt')
                  ]
     colors = ["red", 'green', 'blue', 'yellow']
     distances_big =[[], [], [], []]
@@ -171,7 +183,7 @@ if DETECT_REFINE:
             refine_corners_pred.append(train_class.numpy(pred_point))
 
         # predictions averaging
-        beta = [.8, .8, .8, .8]
+        beta = [1, 1, 1, 1]
         averaged_prediction = []
         for rc, bc, bt in zip(refine_corners_pred, train_class.numpy(big_corners_pred[0]), beta):
             c = rc*bt + bc*(1-bt)

@@ -137,12 +137,13 @@ class TrainRefine(Train):
             self.writer.flush()
             i += 1
 
-        print()
-        print("Stats:")
-        print("min\t", min(loss_values))
-        print("max\t", max(loss_values))
-        print("quantiles", np.quantile(loss_values, [.25,.5,.75]))
-        print()
+        if not optimize:
+            print()
+            print("Stats:")
+            print("min\t", min(loss_values))
+            print("max\t", max(loss_values))
+            print("quantiles", np.quantile(loss_values, [.25,.5,.75]))
+            print()
         return loss_values
 
     def radial_mask(self, size, center):
@@ -163,7 +164,7 @@ class TrainRefine(Train):
         return arr
 
     def refine_loop_step(self, n_p_big, o_p_big, count, p, changes):
-        alpha = 0.2
+        alpha = 1
         o_p_big_weighted = n_p_big*alpha + o_p_big*(1-alpha)
         sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=False)
         o_p_on_patch = self.apply_changes(o_p_big_weighted, sorted_changes)
@@ -242,7 +243,7 @@ class TrainRefine(Train):
                 point = self.rescale_corner(point, from_shape=v["from"], to_shape=v["to"])
         return point
 
-    def crop(self, original, old_prediction, changes, mask, window=200, p_size=(32, 32), additional_offset=(0, 0)):
+    def crop(self, original, old_prediction, changes, mask, window=150, p_size=(48, 48), additional_offset=(0, 0)):
         x_start = 0 if old_prediction[0] - window < 0 else old_prediction[0] - window
         x_start = x_start+additional_offset[0] if x_start+additional_offset[0]>0 else 0
         y_start = 0 if old_prediction[1] - window < 0 else old_prediction[1] - window
@@ -280,7 +281,8 @@ class TrainRefine(Train):
         repo = Path(os.getcwd())
         jcd = CornerDetector(compute_attention=True).to('cuda')
         jcd.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
-                                                    "run_80_1", 'corners_nn_on_ep17_new_best_model_32.0.pt')))
+                                                    "run_48_crop", "retrain_2",
+                                                    'corners_nn_on_ep27_new_best_model_10.0.pt')))
         return jcd
 
     def evaluate(self, method, loader: DataLoader, device: str,

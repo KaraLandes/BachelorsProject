@@ -36,7 +36,9 @@ class TrainFRCNN(Train):
         count_no_improvement = 0
         for im, trg in tqdm(loader):
 
-            im = [el.to(self.device) for el in im]
+            for e, el in enumerate(im):
+                im[e] = el.to(self.device)
+
             trg = [{k: v.to(self.device) for k, v in t.items()} for t in trg]
             pred, l_box = self.net((im, trg, optimize))
 
@@ -89,7 +91,9 @@ class TrainFRCNN(Train):
         allimages, alltargets, allpredictions = [], [], []
         count = 0
         for i, (images, targets) in enumerate(loader):
-            images = [el.to(self.device) for el in images]
+            for e, el in enumerate(images):
+                images[e] = el.to(self.device)
+
             targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
             predictions, _ = self.net((images, targets, False))
             for j in range(len(images)):

@@ -25,7 +25,7 @@ class TrainBaseDetect(Train):
         # fill with values
         for i, (im, trg) in enumerate(batch):
             collated_ims[i][0][:im.shape[0], :im.shape[1]] = im
-            collated_trg[i] = trg
+            collated_trg[i] = trg["boxes"]
 
         # tensors
         collated_trg = torch.from_numpy(collated_trg.astype(np.float32))

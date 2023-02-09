@@ -5,10 +5,10 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
 
-class FastRCNN(nn.Module):
+class FasterRCNN(nn.Module):
     def __init__(self):
         """Fast RCNN with masking, tuning on resnet 50 trained on COCO set"""
-        super(FastRCNN, self).__init__()
+        super(FasterRCNN, self).__init__()
 
         self.rcnn = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
 

@@ -129,8 +129,9 @@ class IntermediateConv(nn.Module):
 
 
 class CornerDetector(nn.Module):
-    def __init__(self, compute_attention=False):
+    def __init__(self, compute_attention=False, size=256):
         super(CornerDetector, self).__init__()
+        self.size = size
         self.vgg16_enc = VGGEncoder()
 
         self.intermediate_conv = IntermediateConv()
@@ -139,7 +140,7 @@ class CornerDetector(nn.Module):
         if compute_attention: self.attention = AttentionMask()
 
         self.fnns = []
-        self.fnns.append(torch.nn.Linear(64 * 12 * 12, 256))
+        self.fnns.append(torch.nn.Linear(64 * int(size/4) * int(size/4), 256)) # depends on image size!
         self.fnns.append(torch.nn.ReLU())
         self.fnns.append(torch.nn.Linear(256, 64))
         self.fnns.append(torch.nn.ReLU())

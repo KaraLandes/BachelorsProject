@@ -50,6 +50,26 @@ class CornerBillOnBackGroundSet(AbstractBillOnBackGroundSet):
 
 class CornerRealBillSet(AbstractRealBillSet):
     def form_target(self, image: Image, mask: Image, seed: int, im_name: str):
+        # # straighten image
+        # temp = np.array(image.convert("L")).astype(np.uint8)
+        # temp[temp > 150] = 255
+        # temp[temp <= 150] = 0
+        #
+        # try: angle = self.detect_angle(temp)
+        # except: angle = 0
+        #
+        # if angle % 90 != 0:
+        #     image = image.rotate(angle=angle, expand=True)
+        #
+        #     mask = np.array(mask)
+        #     mask[:15, :] = 255
+        #     mask[-15:, :] = 255
+        #     mask[:, :15] = 255
+        #     mask[:, -15:] = 255
+        #     mask = Image.fromarray(mask)
+        #     mask = mask.rotate(angle=angle, expand=True, fillcolor="white")
+
+
         output_shape = self.output_shape
         temp_o_shape = (400, 400) if 400 > output_shape[-1] else output_shape
         image, mask = self.preprocess_image(image, mask, output_shape=temp_o_shape,

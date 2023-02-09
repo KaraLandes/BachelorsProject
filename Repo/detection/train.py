@@ -54,7 +54,8 @@ class Train():
                                        batch_size=2,
                                        collate_fn=self.collate_fn,
                                        num_workers=workers,
-                                       shuffle=False)
+                                       shuffle=True)
+
         self.valid_loader = DataLoader(dataset=self.valid_set,
                                        batch_size=2,
                                        collate_fn=self.collate_fn,
@@ -69,11 +70,14 @@ class Train():
         """
         self.writer = SummaryWriter(log_dir=log_dir, flush_secs=1)
 
-    def set_device(self) -> None:
+    def set_device(self, cpu=False) -> None:
         """
         Setting device for training with pytorch
         """
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if cpu:
+            self.device = torch.device("cpu")
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(self, batch):
         """

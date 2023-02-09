@@ -1,3 +1,4 @@
+import math
 import os
 import glob
 
@@ -72,20 +73,33 @@ class AbstractBillOnBackGroundSet(Dataset):
 
         # 2 rotate bill and mask
         np.random.seed(seed)
-        degrees = np.random.randint(0, 180)
-        if degrees % 90 < 3: degrees + 5  # patch
+        degrees = np.random.randint(0, 360)
+        if degrees % 90 == 0:
+            degrees += np.random.choice(list(range(-5, 0)) + list(range(1, 5)))  # patch
         image = image.rotate(degrees, fillcolor=(0,), expand=True)
         mask = mask.rotate(degrees, fillcolor=(0,), expand=True)
 
-        # 3 create my backround as terxture image
+        # 3 create my backround as texture image
         textures_dir = os.path.abspath(os.path.join(self.imdir, os.pardir, os.pardir))
         textures_dir = os.path.join(textures_dir,
                                     "materials_for_preprocessing",
                                     "textures")
         textures = sorted(glob.glob(os.path.join(textures_dir, "**", "*.jpg"), recursive=True))
         background = np.random.choice(textures, size=1)[0]
-        rnd_width = np.random.randint(image.width, image.width * 1.7)
-        rnd_height = np.random.randint(image.height, image.height * 1.7)
+        if image.width < image.height:
+            coef_step = 0.01
+            rnd_height = 0
+            while rnd_height <= image.height:
+                rnd_width = np.random.randint(image.width * (1 + coef_step), image.width * (1.24 + coef_step))
+                rnd_height = np.round((4032 / 1816) * rnd_width, 0).astype(int)
+            # I follow the shape of images of my smartphone
+        else:
+            coef_step = 0.01
+            rnd_width = 0
+            while rnd_width <= image.width:
+                rnd_height = np.random.randint(image.height * (1 + coef_step), image.height * (1.24 + coef_step))
+                rnd_width = np.round((4032 / 1816) * rnd_height, 0).astype(int)
+
         background = Image.open(background).convert('RGB')
         background = background.transform(size=(rnd_width, rnd_height),
                                           method=Image.EXTENT,
@@ -135,7 +149,7 @@ class AbstractBillOnBackGroundSet(Dataset):
                                              (mask > 200)]
         # 9 blur, to kill edges
         image = Image.fromarray(background.astype(np.uint8))
-        image = image.filter(ImageFilter.GaussianBlur(5))
+        image = image.filter(ImageFilter.GaussianBlur(2))
 
         # 10 unifying size
         mask = Image.fromarray(mask)
@@ -144,7 +158,6 @@ class AbstractBillOnBackGroundSet(Dataset):
         mask.thumbnail(size=dims, resample=Image.ANTIALIAS)
         new_im = Image.new(image.mode, output_shape, (0,))
         new_im.paste(image, (0, 0))
-
         mask_b = Image.new(mask.mode, output_shape, (0,))
         mask_b.paste(mask, (0, 0))
 
@@ -214,8 +227,9 @@ class AbstractRealBillSet(Dataset):
         msk = self.masks[idx]
         im = (Image.open(im).convert('RGB'))
         msk = (Image.open(msk).convert('L'))
+
+        # enlarge image
         if im.width < self.output_shape[0] and im.height < self.output_shape[1]:
-            # enlarge image
             if im.width >= im.height:
                 w_to_h = im.width/im.height
                 wh = (self.output_shape[0], int(self.output_shape[0]/w_to_h))
@@ -226,9 +240,26 @@ class AbstractRealBillSet(Dataset):
                 wh = (int(self.output_shape[1] / h_to_w), self.output_shape[1])
                 im = im.resize(wh, Image.EXTENT)
                 msk = msk.resize(wh, Image.EXTENT)
+
+
         im, trg = self.form_target(im, msk, idx, im_name=self.images[idx])
 
         return im, trg
+
+    def detect_angle(self, arr):
+        img_edges = cv2.Canny(arr, 100, 100, apertureSize=3)
+        lines = cv2.HoughLinesP(img_edges, 1, math.pi / 180.0, 100, minLineLength=100, maxLineGap=5)
+        angles = []
+
+        for [[x1, y1, x2, y2]] in lines:
+            angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+            angles.append(angle)
+
+        values, counts = np.unique(angles, return_counts=True)
+        if np.all(counts == counts[0]):
+            return values[0]
+        else:
+            return np.median(angles)
 
     def form_target(self, image: Image, mask: Image, seed: int, im_name: str):
         raise NotImplementedError
@@ -265,7 +296,7 @@ class AbstractRealBillSet(Dataset):
         im_name = im_name.split("/")[-1][:-4]
         if abs(mask.width - image.width) > 1 and np.isin(im_name, rotate_neg):
             mask = mask.rotate(-90, expand=True)
-        elif abs(mask.width - image.width) > 1:
+        elif abs(mask.width - image.width) > 3:
             mask = mask.rotate(90, expand=True)
         elif np.isin(im_name, rotate_neg):
             mask = mask.rotate(180, expand=True)
@@ -298,9 +329,6 @@ class AbstractRealBillSet(Dataset):
         corners = np.reshape(corners, (len(corners), 2))
         while len(corners) < 4:
             corners = np.concatenate((corners, [[0, 0]]))
-        if len(corners) != 4:
-            print()
-            pass
 
         corners_ordered = []
         temp = [c[0] + c[1] for c in corners]
@@ -327,3 +355,4 @@ class AbstractRealBillSet(Dataset):
         corners = [corners[j] for j in corners_ordered]
 
         return corners
+

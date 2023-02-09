@@ -6,7 +6,7 @@ import torch
 from tqdm import tqdm
 import numpy as np
 from ..train import Train
-import matplotlib.image as mpimg
+import itertools
 
 
 class TrainCorner(Train):
@@ -54,6 +54,24 @@ class TrainCorner(Train):
             corners_trg = corners_trg.to(self.device)
             mask_trg = mask_trg.to(self.device).to(torch.long)
             coords_pred, mask_pred = self.net(im)
+
+            # a few corners losses
+            trg_reshaped = torch.reshape(corners_trg, (len(corners_trg), 4, 2))
+            permutations = [(0, 1, 2, 3), (0, 2, 1, 3)]#list(itertools.permutations([0, 1, 2, 3]))
+            l_corner = None
+            for e, element in enumerate(trg_reshaped):
+                min_loss = float("Inf")
+                for p in permutations:
+                    permuted_trg = torch.stack([element[idx] for idx in p]).to(self.device)
+                    permuted_trg = torch.reshape(permuted_trg, (8, ))
+                    lc = criterion(coords_pred[e], permuted_trg)
+                    if lc < min_loss:
+                        min_loss = lc
+                if l_corner is not None:
+                    l_corner += min_loss
+                else:
+                    l_corner = min_loss
+            l_corner /= len(corners_trg)
 
             l_corner = criterion(coords_pred, corners_trg)
             if self.net.compute_attention:
@@ -129,10 +147,10 @@ class TrainCorner(Train):
             fig, ax = plt.subplots(1, 3, figsize=(20*3, 20+7))
             ax[0].imshow(im, cmap="binary_r")
 
-            colors = ['r','g','b','y']
+            colors = ['r', 'g', 'b', 'y']
             # bring to tuples
             corner_pred = [el if el > 0 else 0 for el in corner_pred]
-            corner_pred = [el if el < 127 else 127 for el in corner_pred]
+            corner_pred = [el if el < self.net.size-1 else self.net.size-1 for el in corner_pred]
             corner_pred = [(corner_pred[0], corner_pred[1]), (corner_pred[2], corner_pred[3]),
                            (corner_pred[4], corner_pred[5]), (corner_pred[6], corner_pred[7])]
             corner_trg = [(corner_trg[0], corner_trg[1]), (corner_trg[2], corner_trg[3]),

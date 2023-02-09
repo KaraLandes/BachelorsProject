@@ -23,7 +23,7 @@ rotate_neg = ["real_spar_2_007", "real_spar_2_008", "real_spar_2_009", "real_spa
               "real_spar_3_040", "real_spar_3_041", "real_spar_3_042", "real_spar_4_002",
               "real_spar_4_003", "real_spar_4_004"]
 for b, m in tqdm(zip(bills, masks)):
-    bill = Image.open(b).convert('L')
+    bill = Image.open(b).convert('RGB')
     mask = Image.open(m).convert('L')
     dims = (500, 500)
     bill.thumbnail(size=dims, resample=Image.ANTIALIAS)
@@ -37,25 +37,14 @@ for b, m in tqdm(zip(bills, masks)):
     elif np.isin(b.split("/")[-1][:-4], rotate_neg):
         mask = mask.rotate(180, expand=True)
 
-    # some random rotation
-    rnd_n = np.random.random()
-    if rnd_n < .25:
-        bill = bill.rotate(90, expand=True)
-        mask = mask.rotate(90, expand=True)
-    elif rnd_n < .5:
-        bill = bill.rotate(180, expand=True)
-        mask = mask.rotate(180, expand=True)
-    elif rnd_n < .75:
-        bill = bill.rotate(270, expand=True)
-        mask = mask.rotate(270, expand=True)
-
     bill = np.array(bill)
     mask = np.array(mask)
 
     corners = cv2.goodFeaturesToTrack(mask, 4, 0.01, 5)
     corners = [[c[0][0], c[0][1]] for c in corners]
     f, ax = plt.subplots(3, 1)
-    ax[0].imshow(bill)
+    ax[0].imshow(bill[:,:,::-1])
+    mask = mask.reshape((mask.shape[0], mask.shape[1], 1))
     ax[1].imshow(bill * mask / 255)
     ax[2].imshow(mask)
     for c in corners: ax[2].scatter(c[0], c[1], c="r", s=50)

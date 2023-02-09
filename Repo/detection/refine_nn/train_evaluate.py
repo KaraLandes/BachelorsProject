@@ -60,7 +60,7 @@ class TrainRefine(Train):
         This is function which loops over loader once and does a forward pass through the network.
         @:return list of lost values of individual batches
         """
-        joint_corner_net = self.set_JCD()
+        joint_corner_net = self.jcd
         loss_values = []
         i = 1
         for im, _, masks_trg, originals, corners_big in tqdm(loader):
@@ -142,7 +142,7 @@ class TrainRefine(Train):
             print("Stats:")
             print("min\t", min(loss_values))
             print("max\t", max(loss_values))
-            print("quantiles", np.quantile(loss_values, [.25,.5,.75]))
+            print("quantiles", np.quantile(loss_values, [0, .25,.5,.75]))
             print()
         return loss_values
 
@@ -164,7 +164,7 @@ class TrainRefine(Train):
         return arr
 
     def refine_loop_step(self, n_p_big, o_p_big, count, p, changes):
-        alpha = 1
+        alpha = 0.5
         o_p_big_weighted = n_p_big*alpha + o_p_big*(1-alpha)
         sorted_changes = sorted(changes.items(), key=operator.itemgetter(0), reverse=False)
         o_p_on_patch = self.apply_changes(o_p_big_weighted, sorted_changes)
@@ -203,8 +203,8 @@ class TrainRefine(Train):
         track = []
         track_mask = []
         count = 0
-        condition1 = sum((n_p_big - o_p_big.to(self.device)) ** 2)**0.5
-        condition2 = count < 1 if optimize else True
+        condition1 = sum((n_p_big - o_p_big.to(self.device)) ** 2)**0.5 > 1
+        condition2 = count < 5 if optimize else True
 
         while condition1 and condition2:
             if optimize:
@@ -243,7 +243,7 @@ class TrainRefine(Train):
                 point = self.rescale_corner(point, from_shape=v["from"], to_shape=v["to"])
         return point
 
-    def crop(self, original, old_prediction, changes, mask, window=150, p_size=(48, 48), additional_offset=(0, 0)):
+    def crop(self, original, old_prediction, changes, mask, window=280, p_size=(48, 48), additional_offset=(0, 0)):
         x_start = 0 if old_prediction[0] - window < 0 else old_prediction[0] - window
         x_start = x_start+additional_offset[0] if x_start+additional_offset[0]>0 else 0
         y_start = 0 if old_prediction[1] - window < 0 else old_prediction[1] - window
@@ -277,17 +277,15 @@ class TrainRefine(Train):
     def item(self, tensor):
         return tensor.detach().cpu().item()
 
-    def set_JCD(self):
-        repo = Path(os.getcwd())
-        jcd = CornerDetector(compute_attention=True).to('cuda')
-        jcd.load_state_dict(torch.load(os.path.join(repo, "progress_tracking", "detection/corners_nn", 'models',
-                                                    "run_48_crop", "retrain_2",
-                                                    'corners_nn_on_ep27_new_best_model_10.0.pt')))
-        return jcd
+    def set_JCD(self, model_path, size=64):
+        jcd = CornerDetector(compute_attention=True, size=size).to(self.device)
+        jcd.load_state_dict(torch.load(model_path,
+                                       map_location=self.device))
+        self.jcd = jcd
 
     def evaluate(self, method, loader: DataLoader, device: str,
                  naming: str, path: str, num=2):
-        joint_corner_net = self.set_JCD()
+        joint_corner_net = self.jcd
         self.net.eval()
         allimages, fourcorners, singlepredictions = [], [], []
         count = 0
